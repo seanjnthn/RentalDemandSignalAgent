@@ -1,11 +1,9 @@
 .env
 *.sqlite3
-.env
-__pycache__/
-.pytest_cache/
 __pycache__/
 *.pyc
 .pytest_cache/
+.pytest-tmp/
 .venv/
 venv/
 dist/
@@ -13,3 +11,8 @@ build/
 *.egg-info/
 .codex_task.md
 .codex_cleanup.md
+# Real/sanitized inventory must never be committed.
+# (data/inventory.csv is the committed SAMPLE used by tests — do NOT overwrite it.)
+data/inventory_real.csv
+data/inventory_adapted.csv
+data/*dryrun*.sqlite3
