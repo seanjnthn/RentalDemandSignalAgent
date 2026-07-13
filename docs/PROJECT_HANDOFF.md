@@ -1,16 +1,14 @@
 # PROJECT_HANDOFF.md — Rental Demand Signal Agent
 
-**Milestone:** v0.2 — App Review prep (checkpoint; reviewer demo build approved)
+**Milestone:** v0.3 — Apify live provider MERGED (live-validated)
 **Date:** 2026-07-13
-**Final commit:** `e5a7619`
-**Git tag:** `v0.2-app-review-prep` (annotated, points at `e5a7619`)
-**Test status:** ✅ 13 passed, 0 failed (fully offline)
-**Compliance:** ✅ read-only on Threads; no auto-contact; verified by test + codebase grep
+**Final commit:** `f87d90c` (merge of `feature/apify-provider`)
+**Git tag:** `v0.3-apify-provider` (annotated)
+**Test status:** ✅ 44 passed, 0 failed (incl. live-validated mocked + controlled canaries)
+**Compliance:** ✅ read-only on Apify + Threads; no auto-contact; verified by tests + grep
 
-> **Note on tags:** `v0.1-synthetic-mvp` (`f2b27d8`) is the frozen core MVP.
-> `v0.2-app-review-prep` (`e5a7619`) adds the handoff, real-inventory RUNBOOK, and
-> the Meta App Review package. The approved Streamlit **reviewer demo** is built on
-> a dedicated branch after this tag (see §8).
+> **Tags:** `v0.1-synthetic-mvp` (frozen core) · `v0.2-app-review-prep` (docs + Meta review
+> package + reviewer-demo build) · `v0.3-apify-provider` (Apify primary live source, merged).
 
 ---
 
@@ -29,7 +27,29 @@ search is implemented but gated behind Meta App Review (see §7).
 
 ### Live data providers
 
-Apify is the primary live provider and is off by default. Use `rdsa scan --source apify --dry-run` after setting `APIFY_LIVE_ENABLED=true` and `APIFY_API_TOKEN`. The OfficialThreadsProvider remains retained and disabled. The usage guard warns at $4.00 and stops at $4.75, with state in `data/apify_usage.json`.
+**Apify is the primary live provider** (actor `automation-lab/threads-scraper`, REST,
+normalized to `automation-lab~threads-scraper`). It is **off by default**
+(`APIFY_LIVE_ENABLED=false`). Use `rdsa scan --source apify --dry-run` after setting
+`APIFY_LIVE_ENABLED=true` and `APIFY_API_TOKEN`.
+
+Key properties (validated live 2026-07-13):
+- **Batched search:** one Actor run accepts `searchQueries: [...]` (multiple seeds) —
+  this maximizes recall and minimizes runs/cost. The CLI loops per configured query,
+  but the controlled canary proved a single batched run works and is preferred.
+- **Preflight health check** before any paid run (`GET /acts/{id}` → 200/401/403/404).
+- **Cost guard:** reads actual `usageTotalUsd` per run; warns at **$3.75**, stops at
+  **$4.25**; state in `data/apify_usage.json` (git-ignored). `maxTotalChargeUsd` is
+  sent as a query param (enforced cap, default $0.10).
+- **Normalization:** Actor fields (`postId/text/url/username/timestamp` + 26 others)
+  map into the Lead schema; epoch int/ms `timestamp` is converted to ISO-8601.
+- **OfficialThreadsProvider** (`threads_client.py`) remains retained and disabled
+  (gated on Meta App Review).
+
+```bash
+# Example live canary (one batched run, capped):
+#   POST /acts/automation-lab~threads-scraper/runs?token=***&maxTotalChargeUsd=0.10
+#   body: {"mode":"search","searchQueries":["apartemen","rumah sewa","kontrakan"],"maxPosts":5}
+```
 
 ```
 CLI (rdsa ...)
@@ -49,7 +69,8 @@ Full detail in `docs/ARCHITECTURE.md`. Data contracts in `docs/LEAD_SCHEMA.md`.
 
 | Module | Responsibility |
 |--------|----------------|
-| `config.py` | Env/.env, keywords, locations, thresholds, query budget, paths |
+| `apify_provider.py` | **Primary live provider** — REST adapter for `automation-lab/threads-scraper`: batched search, preflight, normalized→Lead, cost guard (actual `usageTotalUsd`), read-only |
+| `config.py` | Env/.env, keywords, locations, thresholds, query budget, paths, Apify config |
 | `threads_client.py` | **Read-only** wrapper over `GET /v1.0/keyword_search` (GET only) |
 | `query_planner.py` | Build keyword×location queries; enforce per-run query budget |
 | `ingest.py` | Normalize posts, dedup hash, skip seen IDs, throttle author repeats |
@@ -82,7 +103,7 @@ Full detail in `docs/ARCHITECTURE.md`. Data contracts in `docs/LEAD_SCHEMA.md`.
 **Run the suite** (offline, no credentials):
 ```bash
 cd ~/rental-demand-signal-agent
-python -m pytest -q            # 13 passed
+python -m pytest -q            # 44 passed
 ```
 
 | Test file | Covers |
@@ -93,7 +114,8 @@ python -m pytest -q            # 13 passed
 | `test_matcher.py` | Inventory match on core fields; no-match case |
 | `test_query_planner.py` | Query budget respected; no duplicate queries |
 | `test_http.py` | Threads client is GET-only; Telegram targets configured group |
-| `test_no_write_paths.py` | **Compliance guard** — no Threads write/reply/follow/DM/publish |
+| `test_no_write_paths.py` | **Compliance guard** — no Threads/Apify write/reply/follow/DM/publish |
+| `test_apify_*.py` (6) | Actor-ID `~`/`/`/numeric normalization, preflight 200/401/403/404, token redaction, budget guard, normalize (incl. epoch-timestamp), mocked search + controlled end-to-end canary |
 
 **Run the pipeline (offline synthetic, dry-run — no Telegram send):**
 ```bash
@@ -109,12 +131,15 @@ Python 3.11+. SQLite via stdlib.
 
 ## 5. Known limitations
 
-- **No live data yet** — default and only fully-exercised path is `--source synthetic`.
-- **Location inferred from text** — the Threads API returns no geo/location field,
-  so `desired_location` is best-effort (with a confidence score).
-- **Rules-based extraction** — regex/keyword driven; robust on the synthetic set,
-  will need tuning on real-world phrasing (see `RUNBOOK.md` for the tuning loop).
-- **No follower/engagement signals** — API doesn't return them; scoring is text-only.
+- **Live Apify data is now exercised** (validated 2026-07-13: 15 real posts, $0.07/run).
+  Default/offline path remains `--source synthetic`.
+- **Location inferred from text** — the actor returns no geo/location field, so
+  `desired_location` is best-effort (with a confidence score). Broad seed queries
+  maximize recall; target-area filtering happens downstream.
+- **Rules-based extraction** — regex/keyword driven; robust on synthetic + live
+  samples, will need tuning on real-world phrasing (see `RUNBOOK.md` for the tuning loop).
+- **No follower/engagement signals** — actor returns like/reply counts but scoring is
+  currently text-only (counts available for future signals).
 - **CSV inventory only** — SQLite inventory table exists in schema but matcher reads CSV.
 - **No dashboard** — CLI + Telegram only, by design.
 
@@ -144,7 +169,32 @@ operator action in the Meta App Dashboard. **No live call has been made.**
   `DATA_DELETION_INSTRUCTIONS.md`, `SCREEN_RECORDING_SCRIPT.md`, `LIVE_SMOKE_TEST_PLAN.md`,
   `REVIEWER_UI_ASSESSMENT.md`.
 
+## 8.5. Completed work — v0.3-apify-provider (2026-07-13, MERGED to master)
+
+- **Apify primary live provider** (`rdsa/apify_provider.py`): batched `searchQueries`
+  input, `preflight()` health check before any paid run, `normalize()` → Lead schema
+  (incl. epoch int/ms `timestamp` → ISO-8601), `MonthlyUsageGuard` reading actual
+  `usageTotalUsd` (warn $3.75 / stop $4.25), `maxTotalChargeUsd` as query param.
+- **Actor-ID robustness:** `owner/name` → `owner~name` (REST), numeric IDs unchanged,
+  malformed → config error; default config stays human-readable `automation-lab/threads-scraper`.
+- **CLI:** `rdsa scan --source apify` reuses the shared `process_raw` pipeline
+  (extract→score→classify→dedup→match→Telegram-card preview); `OfficialThreadsProvider`
+  retained + disabled.
+- **Tests:** 6 `test_apify_*.py` files (normalization, preflight 200/401/403/404, token
+  redaction, budget guard, mocked search, controlled end-to-end canary) + epoch-timestamp
+  normalize tests. Suite: **44 passed**.
+- **Live validation (controlled canaries, token never printed):**
+  - Broad single query `"apartemen"` → 3 real posts, $0.02.
+  - **Batched run** `searchQueries:["apartemen","rumah sewa","kontrakan"]`, maxPosts=5 →
+    **15 real posts** (5/5/4), **1 Actor run**, **$0.07**, 0 duplicates, classified
+    qualified:2 / watch:6 / agent_broker:2 / irrelevant:5. Pipeline finished without error.
+  - Found + fixed a real bug: actor returns `timestamp` as an epoch **integer** → crash
+    in scorer; now normalized to ISO-8601 (offline test added).
+- **Compliance:** read-only (Apify GET + dataset fetch only); no reply/follow/DM/publish;
+  token in git-ignored `.env`, never logged/committed.
+
 ## 9. Next milestone (in progress)
+
 
 1. **Streamlit reviewer demo** — *approved*. A minimal, read-only App Review surface
    (Connect Threads · Keyword · Location · Run Search · Results · Classification/
@@ -177,8 +227,9 @@ streamlit run app_review_demo.py        # or: python -m rdsa.app_review_demo
 
 Two safe tags exist:
 ```bash
+git checkout v0.3-apify-provider       # detached HEAD at merged Apify live provider
 git checkout v0.2-app-review-prep      # detached HEAD at App Review prep (documents + demo build)
 git checkout v0.1-synthetic-mvp        # detached HEAD at the frozen core MVP
 # destructive reset of a branch:
-git reset --hard v0.2-app-review-prep
+git reset --hard v0.3-apify-provider
 ```
