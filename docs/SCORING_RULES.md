@@ -1,6 +1,6 @@
 # SCORING_RULES.md — Rental Demand Signal Agent (MVP)
 
-**Score version:** `v1.0`
+**Score version:** `v1.1`
 **Last updated:** 2026-07-13
 
 The lead score is a **transparent, additive 0–100** value. Every point is
@@ -57,8 +57,8 @@ elif broker_signals:                 class = agent_broker
 elif intent == 'offering':           class = irrelevant
 elif intent != 'seeking':            class = irrelevant   (unclear / not renting)
 else:  # genuine seeker
-    if score >= 75:                  class = hot_lead
-    elif score >= 55:                class = qualified_lead
+    if score >= 85:                  class = hot_lead
+    elif score >= 60:                class = qualified_lead
     elif score >= 35:                class = watch
     else:                            class = irrelevant
 ```
@@ -71,9 +71,9 @@ than `irrelevant`.
 
 | Band | Score range | Class | Sent to Telegram? |
 |------|-------------|-------|:-----------------:|
-| Hot | 75–100 | `hot_lead` | ✅ |
-| Qualified | 55–74 | `qualified_lead` | ✅ |
-| Watch | 35–54 | `watch` | ❌ (stored only) |
+| Hot | 85–100 | `hot_lead` | ✅ |
+| Qualified | 60–84 | `qualified_lead` | ✅ |
+| Watch | 35–59 | `watch` | ❌ (stored only) |
 | Irrelevant | 0–34 | `irrelevant` | ❌ |
 | Broker | (signal) | `agent_broker` | ❌ |
 | Spam | (signal) | `spam` | ❌ |
@@ -99,7 +99,15 @@ Result: **score 100 → `hot_lead` → sent to Telegram.**
 
 ## 6. Versioning
 
-- This document is `score_version = "v1.0"`, stored on every lead.
+- This document is `score_version = "v1.1"`, stored on every lead.
 - Changing weights/thresholds bumps the version so historical scores stay interpretable.
 - The scorer must load weights from a single config block (`rdsa/scoring_config.py`
   or a YAML) so rules are tunable without code changes.
+
+### Changelog
+
+- **v1.1** — Raised band thresholds (hot 75→85, qualified 55→60) after v1.0
+  calibration showed almost every genuine seeker scored ≥75, collapsing the
+  qualified band. v1.1 restores meaningful tiering (hot = slam-dunk, qualified =
+  solid-but-not-certain). Weights R1–R9 and penalties unchanged.
+- **v1.0** — Initial rubric.

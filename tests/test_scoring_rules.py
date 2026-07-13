@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from rdsa.classifier import classify
 from rdsa.extractor import extract
 from rdsa.scorer import score
+from rdsa.scoring_config import THRESHOLDS
 
 NOW = datetime(2026, 7, 13, 7, tzinfo=timezone.utc)
 
@@ -18,7 +19,10 @@ def test_relative_budget_is_seven_and_numeric_budget_is_fifteen():
 
 
 def test_score_bands_follow_spec_thresholds():
-    for value, expected in ((75, "hot_lead"), (55, "qualified_lead"), (35, "watch"), (34, "irrelevant")):
+    # Bind to config so the test tracks the rubric, never a stale hardcoded band.
+    cases = ((THRESHOLDS["hot"], "hot_lead"), (THRESHOLDS["qualified"], "qualified_lead"),
+             (THRESHOLDS["watch"], "watch"), (THRESHOLDS["watch"] - 1, "irrelevant"))
+    for value, expected in cases:
         lead = _score("Looking for apartment in BSD")
         lead.lead_score = value
         assert classify(lead).lead_class == expected
@@ -27,5 +31,5 @@ def test_score_bands_follow_spec_thresholds():
 def test_high_scoring_seeker_without_move_in_or_duration_is_hot():
     lead = _score("Looking for apartment in BSD, budget 8jt/bulan, 2BR")
     lead.move_in_date = lead.rental_duration = None
-    lead.lead_score = 75
+    lead.lead_score = THRESHOLDS["hot"]
     assert classify(lead).lead_class == "hot_lead"

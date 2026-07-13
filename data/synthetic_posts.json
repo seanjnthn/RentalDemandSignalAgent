@@ -1,86 +1,406 @@
 {
   "_comment": "Synthetic Threads posts for offline testing. 'post' mirrors the exact fields the Threads Keyword Search API returns. 'expected' holds ground-truth labels for tests (not from the API). Timestamps are relative-fresh placeholders; the test harness may rewrite them relative to 'now'. All usernames/content are fictional.",
-  "score_version": "v1.0",
+  "score_version": "v1.1",
   "posts": [
     {
-      "post": {"id": "4001", "text": "Butuh apartemen 2BR di BSD secepatnya, budget 8jt/bulan, furnished, sewa 1 tahun. Ada rekomendasi?", "media_type": "TEXT", "permalink": "https://www.threads.net/@rina_wijaya/post/aa4001", "timestamp": "2026-07-13T02:10:00+0000", "username": "rina_wijaya", "has_replies": true, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "BSD", "property_type": "apartment", "bedrooms": 2, "budget_max": 8000000, "budget_period": "month", "special_requirements": ["furnished"], "lead_class": "hot_lead"}
+      "post": {
+        "id": "4001",
+        "text": "Butuh apartemen 2BR di BSD secepatnya, budget 8jt/bulan, furnished, sewa 1 tahun. Ada rekomendasi?",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@rina_wijaya/post/aa4001",
+        "timestamp": "2026-07-13T02:10:00+0000",
+        "username": "rina_wijaya",
+        "has_replies": true,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "BSD",
+        "property_type": "apartment",
+        "bedrooms": 2,
+        "budget_max": 8000000,
+        "budget_period": "month",
+        "special_requirements": [
+          "furnished"
+        ],
+        "lead_class": "hot_lead"
+      }
     },
     {
-      "post": {"id": "4002", "text": "Looking for apartment near Alam Sutera, 1 bedroom, move in next month, budget around 6 million/month. DM me options please!", "media_type": "TEXT", "permalink": "https://www.threads.net/@davidlee/post/aa4002", "timestamp": "2026-07-13T01:00:00+0000", "username": "davidlee", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Alam Sutera", "property_type": "apartment", "bedrooms": 1, "budget_max": 6000000, "budget_period": "month", "lead_class": "hot_lead"}
+      "post": {
+        "id": "4002",
+        "text": "Looking for apartment near Alam Sutera, 1 bedroom, move in next month, budget around 6 million/month. DM me options please!",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@davidlee/post/aa4002",
+        "timestamp": "2026-07-13T01:00:00+0000",
+        "username": "davidlee",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Alam Sutera",
+        "property_type": "apartment",
+        "bedrooms": 1,
+        "budget_max": 6000000,
+        "budget_period": "month",
+        "lead_class": "hot_lead"
+      }
     },
     {
-      "post": {"id": "4003", "text": "Cari kontrakan di Gading Serpong buat keluarga, 3 kamar, budget maksimal 4jt/bulan, secepatnya ya. Makasih", "media_type": "TEXT", "permalink": "https://www.threads.net/@bpk_hendra/post/aa4003", "timestamp": "2026-07-12T22:30:00+0000", "username": "bpk_hendra", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Gading Serpong", "property_type": "kontrakan", "bedrooms": 3, "budget_max": 4000000, "budget_period": "month", "lead_class": "hot_lead"}
+      "post": {
+        "id": "4003",
+        "text": "Cari kontrakan di Gading Serpong buat keluarga, 3 kamar, budget maksimal 4jt/bulan, secepatnya ya. Makasih",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@bpk_hendra/post/aa4003",
+        "timestamp": "2026-07-12T22:30:00+0000",
+        "username": "bpk_hendra",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Gading Serpong",
+        "property_type": "kontrakan",
+        "bedrooms": 3,
+        "budget_max": 4000000,
+        "budget_period": "month",
+        "lead_class": "hot_lead"
+      }
     },
     {
-      "post": {"id": "4004", "text": "Cari rumah sewa di Tangerang Selatan, minimal 2 kamar tidur, ada carport. Rencana pindah bulan depan, sewa 2 tahun, budget 90jt/tahun.", "media_type": "TEXT", "permalink": "https://www.threads.net/@sari.p/post/aa4004", "timestamp": "2026-07-12T18:00:00+0000", "username": "sari.p", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Tangerang Selatan", "property_type": "house", "bedrooms": 2, "budget_max": 90000000, "budget_period": "year", "rental_duration": "2 tahun", "special_requirements": ["carport"], "lead_class": "hot_lead"}
+      "post": {
+        "id": "4004",
+        "text": "Cari rumah sewa di Tangerang Selatan, minimal 2 kamar tidur, ada carport. Rencana pindah bulan depan, sewa 2 tahun, budget 90jt/tahun.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@sari.p/post/aa4004",
+        "timestamp": "2026-07-12T18:00:00+0000",
+        "username": "sari.p",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Tangerang Selatan",
+        "property_type": "house",
+        "bedrooms": 2,
+        "budget_max": 90000000,
+        "budget_period": "year",
+        "rental_duration": "2 tahun",
+        "special_requirements": [
+          "carport"
+        ],
+        "lead_class": "hot_lead"
+      }
     },
     {
-      "post": {"id": "4005", "text": "Apartment needed in BSD area, studio or 1BR, prefer near AEON. Budget flexible. Anyone?", "media_type": "TEXT", "permalink": "https://www.threads.net/@jenny.k/post/aa4005", "timestamp": "2026-07-12T14:00:00+0000", "username": "jenny.k", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "BSD", "property_type": "apartment", "bedrooms": 1, "special_requirements": ["near AEON"], "lead_class": "hot_lead"}
+      "post": {
+        "id": "4005",
+        "text": "Apartment needed in BSD area, studio or 1BR, prefer near AEON. Budget flexible. Anyone?",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@jenny.k/post/aa4005",
+        "timestamp": "2026-07-12T14:00:00+0000",
+        "username": "jenny.k",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "BSD",
+        "property_type": "apartment",
+        "bedrooms": 1,
+        "special_requirements": [
+          "near AEON"
+        ],
+        "lead_class": "qualified_lead"
+      }
     },
     {
-      "post": {"id": "4006", "text": "Sewa apartemen di Alam Sutera dong, yang penting bersih dan aman. Budget 5jtan.", "media_type": "TEXT", "permalink": "https://www.threads.net/@anak_kos99/post/aa4006", "timestamp": "2026-07-11T10:00:00+0000", "username": "anak_kos99", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Alam Sutera", "property_type": "apartment", "budget_max": 5000000, "budget_period": "month", "lead_class": "hot_lead"}
+      "post": {
+        "id": "4006",
+        "text": "Sewa apartemen di Alam Sutera dong, yang penting bersih dan aman. Budget 5jtan.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@anak_kos99/post/aa4006",
+        "timestamp": "2026-07-11T10:00:00+0000",
+        "username": "anak_kos99",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Alam Sutera",
+        "property_type": "apartment",
+        "budget_max": 5000000,
+        "budget_period": "month",
+        "lead_class": "qualified_lead"
+      }
     },
     {
-      "post": {"id": "4007", "text": "Ada yang tau info kontrakan murah daerah Serpong? Buat berdua sama istri. Makasih sebelumnya.", "media_type": "TEXT", "permalink": "https://www.threads.net/@yudi_prasetyo/post/aa4007", "timestamp": "2026-07-10T09:00:00+0000", "username": "yudi_prasetyo", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Serpong", "property_type": "kontrakan", "lead_class": "watch"}
+      "post": {
+        "id": "4007",
+        "text": "Ada yang tau info kontrakan murah daerah Serpong? Buat berdua sama istri. Makasih sebelumnya.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@yudi_prasetyo/post/aa4007",
+        "timestamp": "2026-07-10T09:00:00+0000",
+        "username": "yudi_prasetyo",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Serpong",
+        "property_type": "kontrakan",
+        "lead_class": "watch"
+      }
     },
     {
-      "post": {"id": "4008", "text": "Looking for apartment, budget under 10 million/month, 2BR, flexible on location but Tangsel preferred. Move-in flexible.", "media_type": "TEXT", "permalink": "https://www.threads.net/@michelle_t/post/aa4008", "timestamp": "2026-07-09T09:00:00+0000", "username": "michelle_t", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Tangerang Selatan", "property_type": "apartment", "bedrooms": 2, "budget_max": 10000000, "budget_period": "month", "lead_class": "hot_lead"}
+      "post": {
+        "id": "4008",
+        "text": "Looking for apartment, budget under 10 million/month, 2BR, flexible on location but Tangsel preferred. Move-in flexible.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@michelle_t/post/aa4008",
+        "timestamp": "2026-07-09T09:00:00+0000",
+        "username": "michelle_t",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Tangerang Selatan",
+        "property_type": "apartment",
+        "bedrooms": 2,
+        "budget_max": 10000000,
+        "budget_period": "month",
+        "lead_class": "qualified_lead"
+      }
     },
     {
-      "post": {"id": "4009", "text": "Pengen banget punya apartemen sendiri di BSD someday... belum kesampaian. Doain ya gengs 🥲", "media_type": "TEXT", "permalink": "https://www.threads.net/@mimpi_indah/post/aa4009", "timestamp": "2026-07-08T09:00:00+0000", "username": "mimpi_indah", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "unclear", "desired_location": "BSD", "lead_class": "watch"}
+      "post": {
+        "id": "4009",
+        "text": "Pengen banget punya apartemen sendiri di BSD someday... belum kesampaian. Doain ya gengs 🥲",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@mimpi_indah/post/aa4009",
+        "timestamp": "2026-07-08T09:00:00+0000",
+        "username": "mimpi_indah",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "unclear",
+        "desired_location": "BSD",
+        "lead_class": "watch"
+      }
     },
     {
-      "post": {"id": "4010", "text": "Mungkin tahun depan mau cari kontrakan sih kalau udah kerja tetap. Masih mikir-mikir sih daerah Tangerang.", "media_type": "TEXT", "permalink": "https://www.threads.net/@budi.santoso/post/aa4010", "timestamp": "2026-07-06T09:00:00+0000", "username": "budi.santoso", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Tangerang", "property_type": "kontrakan", "lead_class": "watch"}
+      "post": {
+        "id": "4010",
+        "text": "Mungkin tahun depan mau cari kontrakan sih kalau udah kerja tetap. Masih mikir-mikir sih daerah Tangerang.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@budi.santoso/post/aa4010",
+        "timestamp": "2026-07-06T09:00:00+0000",
+        "username": "budi.santoso",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Tangerang",
+        "property_type": "kontrakan",
+        "lead_class": "watch"
+      }
     },
     {
-      "post": {"id": "4011", "text": "Cari info aja, kira-kira sewa apartemen di daerah situ mahal ga sih? Penasaran range harganya.", "media_type": "TEXT", "permalink": "https://www.threads.net/@tanya_tanya/post/aa4011", "timestamp": "2026-07-05T09:00:00+0000", "username": "tanya_tanya", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "unclear", "lead_class": "watch"}
+      "post": {
+        "id": "4011",
+        "text": "Cari info aja, kira-kira sewa apartemen di daerah situ mahal ga sih? Penasaran range harganya.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@tanya_tanya/post/aa4011",
+        "timestamp": "2026-07-05T09:00:00+0000",
+        "username": "tanya_tanya",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "unclear",
+        "lead_class": "watch"
+      }
     },
     {
-      "post": {"id": "4012", "text": "DISEWAKAN apartemen 2BR full furnished di BSD, 9jt/bulan nego. Hubungi kami 08xx-xxxx untuk survey. Unit terbatas!", "media_type": "TEXT", "permalink": "https://www.threads.net/@property_agent_id/post/aa4012", "timestamp": "2026-07-13T03:00:00+0000", "username": "property_agent_id", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "offering", "lead_class": "agent_broker"}
+      "post": {
+        "id": "4012",
+        "text": "DISEWAKAN apartemen 2BR full furnished di BSD, 9jt/bulan nego. Hubungi kami 08xx-xxxx untuk survey. Unit terbatas!",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@property_agent_id/post/aa4012",
+        "timestamp": "2026-07-13T03:00:00+0000",
+        "username": "property_agent_id",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "offering",
+        "lead_class": "agent_broker"
+      }
     },
     {
-      "post": {"id": "4013", "text": "For rent! Beautiful house in Gading Serpong, 4BR, private pool, 15jt/month. Contact us for viewing. Many units available across Tangsel.", "media_type": "TEXT", "permalink": "https://www.threads.net/@serpong.properties/post/aa4013", "timestamp": "2026-07-13T04:00:00+0000", "username": "serpong.properties", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "offering", "lead_class": "agent_broker"}
+      "post": {
+        "id": "4013",
+        "text": "For rent! Beautiful house in Gading Serpong, 4BR, private pool, 15jt/month. Contact us for viewing. Many units available across Tangsel.",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@serpong.properties/post/aa4013",
+        "timestamp": "2026-07-13T04:00:00+0000",
+        "username": "serpong.properties",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "offering",
+        "lead_class": "agent_broker"
+      }
     },
     {
-      "post": {"id": "4014", "text": "Tersedia banyak unit apartemen & rumah sewa area Alam Sutera, BSD, Gading Serpong. Harga terbaik! WA admin 08xxxx. Buruan sebelum kehabisan!!", "media_type": "TEXT", "permalink": "https://www.threads.net/@sewa_murah_tangsel/post/aa4014", "timestamp": "2026-07-12T09:00:00+0000", "username": "sewa_murah_tangsel", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "offering", "lead_class": "agent_broker"}
+      "post": {
+        "id": "4014",
+        "text": "Tersedia banyak unit apartemen & rumah sewa area Alam Sutera, BSD, Gading Serpong. Harga terbaik! WA admin 08xxxx. Buruan sebelum kehabisan!!",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@sewa_murah_tangsel/post/aa4014",
+        "timestamp": "2026-07-12T09:00:00+0000",
+        "username": "sewa_murah_tangsel",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "offering",
+        "lead_class": "agent_broker"
+      }
     },
     {
-      "post": {"id": "4015", "text": "🔥🔥 CUAN GEDE!! Join sekarang modal 100rb jadi 10jt seminggu! Klik link di bio. Apartemen mobil rumah semua bisa kebeli!! 💰💰💰 #investasi", "media_type": "TEXT", "permalink": "https://www.threads.net/@cuan_makmur88/post/aa4015", "timestamp": "2026-07-13T05:00:00+0000", "username": "cuan_makmur88", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "unclear", "lead_class": "spam"}
+      "post": {
+        "id": "4015",
+        "text": "🔥🔥 CUAN GEDE!! Join sekarang modal 100rb jadi 10jt seminggu! Klik link di bio. Apartemen mobil rumah semua bisa kebeli!! 💰💰💰 #investasi",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@cuan_makmur88/post/aa4015",
+        "timestamp": "2026-07-13T05:00:00+0000",
+        "username": "cuan_makmur88",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "unclear",
+        "lead_class": "spam"
+      }
     },
     {
-      "post": {"id": "4016", "text": "GIVEAWAY apartemen gratis 1 bulan!! Follow + repost + tag 3 teman. Cari apartemen? Menangkan disini!! Link bio 👉👉👉", "media_type": "TEXT", "permalink": "https://www.threads.net/@giveaway_hoki/post/aa4016", "timestamp": "2026-07-13T06:00:00+0000", "username": "giveaway_hoki", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "unclear", "lead_class": "spam"}
+      "post": {
+        "id": "4016",
+        "text": "GIVEAWAY apartemen gratis 1 bulan!! Follow + repost + tag 3 teman. Cari apartemen? Menangkan disini!! Link bio 👉👉👉",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@giveaway_hoki/post/aa4016",
+        "timestamp": "2026-07-13T06:00:00+0000",
+        "username": "giveaway_hoki",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "unclear",
+        "lead_class": "spam"
+      }
     },
     {
-      "post": {"id": "4017", "text": "Just moved into my new apartment in Jakarta Selatan! So happy 🎉 No longer apartment hunting lol", "media_type": "TEXT", "permalink": "https://www.threads.net/@happytenant/post/aa4017", "timestamp": "2026-07-12T09:00:00+0000", "username": "happytenant", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "unclear", "lead_class": "irrelevant"}
+      "post": {
+        "id": "4017",
+        "text": "Just moved into my new apartment in Jakarta Selatan! So happy 🎉 No longer apartment hunting lol",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@happytenant/post/aa4017",
+        "timestamp": "2026-07-12T09:00:00+0000",
+        "username": "happytenant",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "unclear",
+        "lead_class": "irrelevant"
+      }
     },
     {
-      "post": {"id": "4018", "text": "Weather today in Tangerang is crazy hot. Need AC in every apartment fr 😭", "media_type": "TEXT", "permalink": "https://www.threads.net/@cuaca_panas/post/aa4018", "timestamp": "2026-07-12T09:00:00+0000", "username": "cuaca_panas", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "unclear", "lead_class": "irrelevant"}
+      "post": {
+        "id": "4018",
+        "text": "Weather today in Tangerang is crazy hot. Need AC in every apartment fr 😭",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@cuaca_panas/post/aa4018",
+        "timestamp": "2026-07-12T09:00:00+0000",
+        "username": "cuaca_panas",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "unclear",
+        "lead_class": "irrelevant"
+      }
     },
     {
-      "post": {"id": "4019", "text": "Butuh apartemen 2BR di BSD secepatnya, budget 8jt/bulan, furnished, sewa 1 tahun. Ada rekomendasi?", "media_type": "TEXT", "permalink": "https://www.threads.net/@rina_wijaya/post/aa4019", "timestamp": "2026-07-13T02:40:00+0000", "username": "rina_wijaya", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "BSD", "property_type": "apartment", "bedrooms": 2, "lead_class": "hot_lead", "_note": "Near-duplicate of 4001 by same author within window -> should be deduped/throttled, not double-alerted."}
+      "post": {
+        "id": "4019",
+        "text": "Butuh apartemen 2BR di BSD secepatnya, budget 8jt/bulan, furnished, sewa 1 tahun. Ada rekomendasi?",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@rina_wijaya/post/aa4019",
+        "timestamp": "2026-07-13T02:40:00+0000",
+        "username": "rina_wijaya",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "BSD",
+        "property_type": "apartment",
+        "bedrooms": 2,
+        "lead_class": "hot_lead",
+        "_note": "Near-duplicate of 4001 by same author within window -> should be deduped/throttled, not double-alerted."
+      }
     },
     {
-      "post": {"id": "4020", "text": "cari rumah sewa min 3 kamar di Tangerang Selatan, pet friendly (punya 2 kucing), budget 7-9jt/bln, mau pindah akhir bulan ini. tolong info yaa 🙏", "media_type": "TEXT", "permalink": "https://www.threads.net/@catlover.id/post/aa4020", "timestamp": "2026-07-13T00:30:00+0000", "username": "catlover.id", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Tangerang Selatan", "property_type": "house", "bedrooms": 3, "budget_min": 7000000, "budget_max": 9000000, "budget_period": "month", "special_requirements": ["pet-friendly"], "lead_class": "hot_lead"}
+      "post": {
+        "id": "4020",
+        "text": "cari rumah sewa min 3 kamar di Tangerang Selatan, pet friendly (punya 2 kucing), budget 7-9jt/bln, mau pindah akhir bulan ini. tolong info yaa 🙏",
+        "media_type": "TEXT",
+        "permalink": "https://www.threads.net/@catlover.id/post/aa4020",
+        "timestamp": "2026-07-13T00:30:00+0000",
+        "username": "catlover.id",
+        "has_replies": false,
+        "is_quote_post": false,
+        "is_reply": false
+      },
+      "expected": {
+        "rental_intent": "seeking",
+        "desired_location": "Tangerang Selatan",
+        "property_type": "house",
+        "bedrooms": 3,
+        "budget_min": 7000000,
+        "budget_max": 9000000,
+        "budget_period": "month",
+        "special_requirements": [
+          "pet-friendly"
+        ],
+        "lead_class": "hot_lead"
+      }
     }
   ]
 }
