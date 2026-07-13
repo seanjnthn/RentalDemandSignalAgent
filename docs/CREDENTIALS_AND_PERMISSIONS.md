@@ -34,7 +34,7 @@
 | **Threads user access token (long-lived)** | Authenticates API calls | OAuth 2.0 Authorization Window → short-lived token (1h) → exchange for long-lived (60 days) → refresh before expiry. |
 | **Redirect URI** | OAuth callback | Configured in the app; needed once to complete the auth flow. |
 | **Telegram bot token** | Send alerts | Create a bot via @BotFather. |
-| **Telegram chat_id** | Alert destination | The operator's channel/group/DM id. |
+| **Telegram chat_id** | Alert destination | The operator's **group** chat id (add the bot to the group). |
 
 ## 3. Permissions (scopes)
 
@@ -75,6 +75,10 @@ RDSA_INVENTORY_CSV=data/inventory.csv
 ```
 
 ## 6. Credential acquisition checklist (operator, one-time)
+
+> **Current status (2026-07-13):** operator has a **Threads account only** — no
+> Meta app created yet. Until the steps below are done, the live client stays
+> stubbed and the system runs on synthetic data. Telegram alerts go to a **group**.
 
 - [ ] Create Meta app with **Threads use case**.
 - [ ] Record Threads app ID + secret.

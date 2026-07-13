@@ -15,8 +15,8 @@
       "expected": {"rental_intent": "seeking", "desired_location": "Gading Serpong", "property_type": "kontrakan", "bedrooms": 3, "budget_max": 4000000, "budget_period": "month", "lead_class": "hot_lead"}
     },
     {
-      "post": {"id": "4004", "text": "Cari rumah sewa di Tangerang Selatan, minimal 2 kamar tidur, ada carport. Rencana pindah bulan depan, sewa 2 tahun.", "media_type": "TEXT", "permalink": "https://www.threads.net/@sari.p/post/aa4004", "timestamp": "2026-07-12T18:00:00+0000", "username": "sari.p", "has_replies": false, "is_quote_post": false, "is_reply": false},
-      "expected": {"rental_intent": "seeking", "desired_location": "Tangerang Selatan", "property_type": "house", "bedrooms": 2, "rental_duration": "2 tahun", "special_requirements": ["carport"], "lead_class": "hot_lead"}
+      "post": {"id": "4004", "text": "Cari rumah sewa di Tangerang Selatan, minimal 2 kamar tidur, ada carport. Rencana pindah bulan depan, sewa 2 tahun, budget 90jt/tahun.", "media_type": "TEXT", "permalink": "https://www.threads.net/@sari.p/post/aa4004", "timestamp": "2026-07-12T18:00:00+0000", "username": "sari.p", "has_replies": false, "is_quote_post": false, "is_reply": false},
+      "expected": {"rental_intent": "seeking", "desired_location": "Tangerang Selatan", "property_type": "house", "bedrooms": 2, "budget_max": 90000000, "budget_period": "year", "rental_duration": "2 tahun", "special_requirements": ["carport"], "lead_class": "hot_lead"}
     },
     {
       "post": {"id": "4005", "text": "Apartment needed in BSD area, studio or 1BR, prefer near AEON. Budget flexible. Anyone?", "media_type": "TEXT", "permalink": "https://www.threads.net/@jenny.k/post/aa4005", "timestamp": "2026-07-12T14:00:00+0000", "username": "jenny.k", "has_replies": false, "is_quote_post": false, "is_reply": false},

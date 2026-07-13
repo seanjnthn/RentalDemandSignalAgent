@@ -24,7 +24,7 @@ shown in the Telegram alert. No black-box model — rules first.
 |---|------|--------:|------------------------|
 | R1 | **Clear rental intent (seeking)** | 25 | +25 explicit ("cari", "butuh", "looking for", "need apartment"); +10 implicit/ambiguous; 0 none. |
 | R2 | **Target location match** | 20 | +20 exact target (BSD/Alam Sutera/Gading Serpong/Tangsel); +10 adjacent/broader (Serpong, Tangerang); 0 none/other. |
-| R3 | **Budget stated** | 15 | +15 explicit numeric budget; +7 relative ("murah", "under X"); 0 none. |
+| R3 | **Budget stated** | 15 | +15 explicit numeric budget (any period: /bulan, /tahun, etc. — currency IDR); +7 relative ("murah", "under X"); 0 none. |
 | R4 | **Property type specified** | 10 | +10 apartment/house/kontrakan/kost clearly stated; +5 vague ("tempat tinggal"); 0 none. |
 | R5 | **Bedrooms specified** | 8 | +8 explicit ("2BR", "2 kamar"); 0 none. |
 | R6 | **Move-in urgency** | 12 | +12 within ~30 days / "secepatnya"/"ASAP"/"bulan ini"; +6 1–3 months; +2 vague future; 0 none. |

@@ -112,8 +112,15 @@ The agent **surfaces and organizes** demand. It never contacts anyone.
 
 ## 10. Open questions for the operator
 
-1. Which Telegram delivery target: a private channel, a group, or a DM to you?
-2. Budget currency/threshold assumptions (assume IDR/month unless told otherwise)?
-3. Do you already have a Meta app + Threads use case created, or should the
-   credential-acquisition steps be part of delivery?
-4. Inventory format preference: start with CSV (simplest) and migrate to SQLite?
+All resolved by the operator (2026-07-13):
+
+1. **Telegram delivery target:** a **group** (configured via `TELEGRAM_CHAT_ID`).
+2. **Budget:** currency is always **IDR**; period is variable — `month`,
+   `quarter`, `half_year`, `year`, or `other` (anything at or above monthly).
+   The extractor must detect the stated period, not assume monthly.
+3. **Credentials:** operator has a **Threads account only** — no Meta app yet.
+   Therefore Codex builds the live Threads client behind a clean interface but
+   **stubs/mocks it**; all development and testing runs on synthetic data. The
+   Meta-app + App-Review setup is a documented operator step (see
+   `CREDENTIALS_AND_PERMISSIONS.md`), unblocked later.
+4. **Inventory:** start with **CSV**, migrate to SQLite later.

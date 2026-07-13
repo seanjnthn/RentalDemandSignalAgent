@@ -26,7 +26,7 @@ Defines the extracted lead structure and the SQLite storage schema. Only
 | `budget_min` | int / null | extracted | Numeric, currency in `budget_currency`. |
 | `budget_max` | int / null | extracted | Numeric. |
 | `budget_currency` | string | extracted | Default `IDR`. |
-| `budget_period` | enum | extracted | `month` / `year` / `unknown`. |
+| `budget_period` | enum | extracted | `month` / `quarter` / `half_year` / `year` / `other` / `unknown`. Currency always `IDR`. |
 | `move_in_date` | date / null | extracted | Parsed or relative ("next month"). |
 | `rental_duration` | string / null | extracted | e.g. "12 months", "1 tahun". |
 | `special_requirements` | string[] | extracted | e.g. `furnished`, `pet-friendly`, `near MRT`. |
