@@ -11,9 +11,12 @@ build/
 *.egg-info/
 .codex_task.md
 .codex_cleanup.md
+.codex_demo.md
+.codex_apify.md
+
 # Real/sanitized inventory must never be committed.
 # (data/inventory.csv is the committed SAMPLE used by tests — do NOT overwrite it.)
 data/inventory_real.csv
 data/inventory_adapted.csv
 data/*dryrun*.sqlite3
-.codex_demo.md
+data/apify_usage.json
