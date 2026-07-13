@@ -193,14 +193,41 @@ operator action in the Meta App Dashboard. **No live call has been made.**
 - **Compliance:** read-only (Apify GET + dataset fetch only); no reply/follow/DM/publish;
   token in git-ignored `.env`, never logged/committed.
 
-### 8.6. v0.4 operational pilot (in progress)
+### 8.6. v0.4 operational pilot (built, live-validated; operator-gated next steps)
 
 The pilot adds validated operator-supplied real inventory support, SQLite lead
-persistence with provider/seen timestamps and retention cleanup, a manual
-`rdsa pilot-scan` using one batched Apify run, and Telegram preview cards only.
-Real inventory must be placed by the operator and live access/send paths remain
-operator-gated; there is no auto-contact, scheduler, or Telegram send in the
-pilot command.
+persistence, a manual `rdsa pilot-scan` using one batched Apify run, and Telegram
+**preview cards only** (no sending).
+
+- **Real inventory** (`rdsa/inventory.py`): validates the 11 required columns, rejects
+  duplicate `property_id`, excludes non-`available` rows, normalizes area aliases
+  (BSD/BSD City, Alam Sutera/Alsut, Gading Serpong/GS, Tangerang Selatan/Tangsel),
+  and rejects PII-like rows. `data/inventory_real.csv` is git-ignored and must be
+  supplied by the operator; if absent, matching falls back to the synthetic sample.
+- **Persistence** (`rdsa/db.py`): `leads` gains `provider`, `first_seen`, `last_seen`;
+  `INSERT OR IGNORE` preserves manual `status`/`notes` on re-scan; near-duplicate text
+  → status `duplicate`; status transitions include `negotiating`/`duplicate`; 
+  `purge_old_leads(days)` retention (default 90d) deletes only rejected/duplicate/
+  irrelevant leads past the cutoff.
+- **Manual command** `rdsa pilot-scan`: requires `APIFY_LIVE_ENABLED=true`; runs ONE
+  batched Actor run (`searchQueries:["apartemen","rumah sewa","kontrakan","sewa apartemen"]`,
+  maxPosts=5, maxTotal=20, `maxTotalChargeUsd=0.10`); persists to SQLite; prints preview
+  cards for hot/qualified leads only — **no Telegram send, no contact, no scheduler**.
+- **Tests:** `test_inventory_real.py` (validation/aliases/PII/exclusion/dup/empty),
+  `test_lead_persistence.py` (dedup/manual-status-preservation/retention),
+  `test_telegram_preview.py` (eligibility + sanitization), `test_pilot_scan_mock.py`
+  (mocked one-run scan, persisted, no send). Suite: **52 passed**.
+- **Live validation (controlled manual pilot, token never printed):** one batched run
+  → 20 raw posts → **19 leads persisted**, 1 duplicate, 4 hot/qualified preview cards
+  in spec format; monthly cost accumulator ~$0.12 (single run well under $0.10 cap).
+  Found + fixed a real bug: `search_batched` polling used a fixed 30-iter loop (≈1.5s)
+  that timed out on real runs → now polls until the `timeout` deadline.
+- **Compliance:** read-only Apify GET + dataset fetch; preview only, no `.send()` in
+  pilot path; token git-ignored, never logged/committed.
+
+**Operator next steps (not built, by instruction):** place sanitized
+`data/inventory_real.csv`; enable live; *separately* decide on scheduling (cron) and
+Telegram sending. Do not auto-contact leads.
 
 ## 9. Next milestone (in progress)
 
