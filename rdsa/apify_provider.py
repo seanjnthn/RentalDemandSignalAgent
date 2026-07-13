@@ -236,6 +236,34 @@ class ApifyThreadsProvider:
         except (ValueError, TypeError, AttributeError) as exc:
             raise ApifyError("Apify returned malformed JSON") from exc
 
+    def search_batched(self, queries, max_posts_per_query=5, max_total=20, max_total_charge_usd=0.10, timeout=60):
+        """Run exactly one read-only Actor execution for all pilot queries."""
+        if not apify_live_enabled():
+            raise ApifyError("Apify live disabled; set APIFY_LIVE_ENABLED=true to enable it")
+        if not self.token: raise ApifyError("APIFY_API_TOKEN is required when Apify live is enabled")
+        if self.usage.check_budget() == "stop": raise ApifyBudgetExceeded("Apify monthly usage budget exceeded")
+        self.preflight(timeout)
+        url = f"{self.BASE_URL}/acts/{self.normalized_actor_id}/runs?token={self.token}&maxTotalChargeUsd={max_total_charge_usd}"
+        response = self._request("post", url, timeout, json={"mode":"search", "searchQueries":list(queries), "maxPosts":max_posts_per_query})
+        payload = self._json(response); run = payload.get("data", payload) if isinstance(payload, dict) else {}
+        run_id = run.get("id", run.get("runId")) if isinstance(run, dict) else None
+        if not run_id: raise ApifyError("Apify run response did not contain a run id")
+        deadline=time.monotonic()+timeout; status_obj=run
+        for _ in range(30):
+            if time.monotonic() >= deadline: raise ApifyError("Apify actor status polling timed out")
+            status_payload=self._json(self._request("get",f"{self.BASE_URL}/actor-runs/{run_id}?token={self.token}",timeout))
+            status_obj=status_payload.get("data",status_payload) if isinstance(status_payload,dict) else {}
+            status=status_obj.get("status") if isinstance(status_obj,dict) else None
+            if status == "SUCCEEDED": break
+            if status in {"FAILED","TIMED-OUT","ABORTED"}: raise ApifyError(f"Apify actor run {status.lower()}")
+            time.sleep(.05)
+        else: raise ApifyError("Apify actor status polling exceeded poll limit")
+        dataset_id=status_obj.get("defaultDatasetId") if isinstance(status_obj,dict) else None
+        items_url=f"{self.BASE_URL}/datasets/{dataset_id}/items?token={self.token}" if dataset_id else f"{self.BASE_URL}/actor-runs/{run_id}/dataset/items?token={self.token}"
+        items=self._json(self._request("get",items_url,timeout)); items=items if isinstance(items,list) else items.get("items",[]) if isinstance(items,dict) else []
+        self._observe_fields(items); self.usage.record_run({**run,**status_obj})
+        return [normalized for item in items[:max_total] if (normalized:=self.normalize(item))][:max_total]
+
     def search(self, queries, max_posts_per_query=5, timeout=60, max_total=20, max_total_charge_usd=0.10):
         if not apify_live_enabled():
             raise ApifyError("Apify live disabled; set APIFY_LIVE_ENABLED=true to enable it")

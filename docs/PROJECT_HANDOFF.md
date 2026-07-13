@@ -193,6 +193,15 @@ operator action in the Meta App Dashboard. **No live call has been made.**
 - **Compliance:** read-only (Apify GET + dataset fetch only); no reply/follow/DM/publish;
   token in git-ignored `.env`, never logged/committed.
 
+### 8.6. v0.4 operational pilot (in progress)
+
+The pilot adds validated operator-supplied real inventory support, SQLite lead
+persistence with provider/seen timestamps and retention cleanup, a manual
+`rdsa pilot-scan` using one batched Apify run, and Telegram preview cards only.
+Real inventory must be placed by the operator and live access/send paths remain
+operator-gated; there is no auto-contact, scheduler, or Telegram send in the
+pilot command.
+
 ## 9. Next milestone (in progress)
 
 

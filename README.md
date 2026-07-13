@@ -97,3 +97,16 @@ Apify is the primary live provider and uses the read-only `automation-lab/thread
 Preview with `rdsa scan --source apify --dry-run`. The monthly guard stores estimated cost in `data/apify_usage.json`, warns at $4.00, and refuses new runs at $4.75. The Apify path only prints cards for manual review and never sends Telegram. The existing `OfficialThreadsProvider` in `rdsa/threads_client.py` is retained unchanged but disabled.
 
 Status transitions are `new -> reviewed -> contacted -> responded -> viewing_scheduled -> converted`, with `rejected` available from any active state. See `docs/RUNBOOK.md` for operating notes.
+
+## Operational Pilot
+
+Run a manual, preview-only live scan with `rdsa pilot-scan`. It requires
+`APIFY_LIVE_ENABLED=true` and an Apify token, performs one batched read-only
+Actor run, persists leads in SQLite, and prints Telegram-shaped cards without
+sending Telegram messages. Place the operator-supplied, sanitized real source
+at `data/inventory_real.csv`; it is git-ignored and never fabricated by this
+project. Until it exists, pilot matching uses the committed synthetic sample.
+
+Rejected/duplicate/irrelevant leads are eligible for cleanup after
+`LEAD_RETENTION_DAYS` (default 90). Live enablement and any future scheduling
+or Telegram sending remain explicit operator actions.
