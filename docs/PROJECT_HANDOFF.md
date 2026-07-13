@@ -27,6 +27,10 @@ search is implemented but gated behind Meta App Review (see §7).
 
 ## 2. Current architecture
 
+### Live data providers
+
+Apify is the primary live provider and is off by default. Use `rdsa scan --source apify --dry-run` after setting `APIFY_LIVE_ENABLED=true` and `APIFY_API_TOKEN`. The OfficialThreadsProvider remains retained and disabled. The usage guard warns at $4.00 and stops at $4.75, with state in `data/apify_usage.json`.
+
 ```
 CLI (rdsa ...)
   init-db · scan · list · status · match · notify · reprocess · purge

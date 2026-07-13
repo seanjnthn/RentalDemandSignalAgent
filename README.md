@@ -74,6 +74,26 @@ rdsa status 4001 reviewed
 pytest
 ```
 
+## App Review Demo
+
+Install and launch the human-triggered Streamlit review surface:
+
+```bash
+pip install -e .[test]
+streamlit run app_review_demo.py
+```
+
+Synthetic mode reads `data/synthetic_posts.json` and needs no credentials or
+network access. Live mode is off unless `THREADS_LIVE_ENABLED=true` and
+`THREADS_APP_ID`, `THREADS_APP_SECRET`, and `THREADS_REDIRECT_URI` are set.
+The demo is read-only on Threads and never automatically contacts authors.
+
 The live Threads source is intentionally stubbed: it requires the official API, approved keyword-search permission, and credentials. The only Threads operation implemented is the official keyword-search GET. Telegram is send-only to the configured operator group; outreach to leads remains manual.
+
+## Apify live provider
+
+Apify is the primary live provider and uses the read-only `automation-lab/threads-scraper` actor for public Threads posts. Live is off by default. Set `APIFY_API_TOKEN` and `APIFY_LIVE_ENABLED=true` (optionally `APIFY_ACTOR_ID`) to enable it. Limits are `APIFY_MAX_TOTAL=20` and `APIFY_MAX_PER_QUERY=5`; approved queries are in `rdsa/config.py`.
+
+Preview with `rdsa scan --source apify --dry-run`. The monthly guard stores estimated cost in `data/apify_usage.json`, warns at $4.00, and refuses new runs at $4.75. The Apify path only prints cards for manual review and never sends Telegram. The existing `OfficialThreadsProvider` in `rdsa/threads_client.py` is retained unchanged but disabled.
 
 Status transitions are `new -> reviewed -> contacted -> responded -> viewing_scheduled -> converted`, with `rejected` available from any active state. See `docs/RUNBOOK.md` for operating notes.
