@@ -74,6 +74,20 @@ rdsa status 4001 reviewed
 pytest
 ```
 
+## App Review Demo
+
+Install and launch the human-triggered Streamlit review surface:
+
+```bash
+pip install -e .[test]
+streamlit run app_review_demo.py
+```
+
+Synthetic mode reads `data/synthetic_posts.json` and needs no credentials or
+network access. Live mode is off unless `THREADS_LIVE_ENABLED=true` and
+`THREADS_APP_ID`, `THREADS_APP_SECRET`, and `THREADS_REDIRECT_URI` are set.
+The demo is read-only on Threads and never automatically contacts authors.
+
 The live Threads source is intentionally stubbed: it requires the official API, approved keyword-search permission, and credentials. The only Threads operation implemented is the official keyword-search GET. Telegram is send-only to the configured operator group; outreach to leads remains manual.
 
 Status transitions are `new -> reviewed -> contacted -> responded -> viewing_scheduled -> converted`, with `rejected` available from any active state. See `docs/RUNBOOK.md` for operating notes.
