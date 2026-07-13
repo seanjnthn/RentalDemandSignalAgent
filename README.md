@@ -53,3 +53,27 @@ cari rumah sewa · looking for apartment · apartment needed
 - **Human** — approves leads, contacts people manually, manages inventory, updates status.
 - **Hermes** — plans, orchestrates, schedules scans, analyzes/reviews leads & Codex output.
 - **Codex** — builds connector, DB, scoring, matcher, notifier, tests, docs.
+# Rental Demand Signal Agent
+
+An offline-first, read-only Threads demand-signal MVP. It extracts public rental intent, scores and classifies it with transparent v1.0 rules, matches local inventory, stores minimal data in SQLite, and sends review cards only to the operator's Telegram group.
+
+## Setup
+
+```bash
+python -m pip install -e ".[test]"
+copy .env.example .env       # Windows
+rdsa init-db
+```
+
+Run the complete offline vertical slice:
+
+```bash
+rdsa scan --source synthetic --dry-run
+rdsa list --class hot_lead
+rdsa status 4001 reviewed
+pytest
+```
+
+The live Threads source is intentionally stubbed: it requires the official API, approved keyword-search permission, and credentials. The only Threads operation implemented is the official keyword-search GET. Telegram is send-only to the configured operator group; outreach to leads remains manual.
+
+Status transitions are `new -> reviewed -> contacted -> responded -> viewing_scheduled -> converted`, with `rejected` available from any active state. See `docs/RUNBOOK.md` for operating notes.
