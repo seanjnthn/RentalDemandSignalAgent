@@ -1,0 +1,11 @@
+inventory_id,title,location,property_type,bedrooms,price,currency,period,furnished,available_from,notes
+INV001,Cozy 2BR @ Green Office Park,BSD,apartment,2,7500000,IDR,month,1,2026-08-01,Near AEON Mall BSD
+INV002,Studio near AEON,BSD,apartment,1,4500000,IDR,month,1,2026-07-20,Walking distance to AEON
+INV003,1BR The Springs,Alam Sutera,apartment,1,5500000,IDR,month,1,2026-07-15,Near Living World
+INV004,2BR Tower Sutera,Alam Sutera,apartment,2,7000000,IDR,month,0,2026-08-15,Unfurnished
+INV005,3BR Family House,Gading Serpong,house,3,9000000,IDR,month,0,2026-09-01,Carport for 2 cars
+INV006,Kontrakan 3 Kamar,Gading Serpong,kontrakan,3,3800000,IDR,month,0,2026-07-25,Cocok untuk keluarga
+INV007,4BR House w/ Garden,Tangerang Selatan,house,4,12000000,IDR,month,1,2026-08-10,Pet friendly, small garden
+INV008,3BR House Bintaro,Tangerang Selatan,house,3,8500000,IDR,month,0,2026-08-01,Pet friendly, carport
+INV009,Kontrakan Serpong,Serpong,kontrakan,2,3500000,IDR,month,0,2026-07-18,Dekat pasar modern
+INV010,Studio Furnished BSD,BSD,apartment,1,4000000,IDR,month,1,2026-07-14,All-in furnished
