@@ -1,11 +1,16 @@
 # PROJECT_HANDOFF.md — Rental Demand Signal Agent
 
-**Milestone:** v0.1 — Synthetic-data MVP (frozen)
+**Milestone:** v0.2 — App Review prep (checkpoint; reviewer demo build approved)
 **Date:** 2026-07-13
-**Final commit:** `f2b27d8`
-**Git tag:** `v0.1-synthetic-mvp` (annotated, points at `f2b27d8`)
+**Final commit:** `e5a7619`
+**Git tag:** `v0.2-app-review-prep` (annotated, points at `e5a7619`)
 **Test status:** ✅ 13 passed, 0 failed (fully offline)
 **Compliance:** ✅ read-only on Threads; no auto-contact; verified by test + codebase grep
+
+> **Note on tags:** `v0.1-synthetic-mvp` (`f2b27d8`) is the frozen core MVP.
+> `v0.2-app-review-prep` (`e5a7619`) adds the handoff, real-inventory RUNBOOK, and
+> the Meta App Review package. The approved Streamlit **reviewer demo** is built on
+> a dedicated branch after this tag (see §8).
 
 ---
 
@@ -122,23 +127,54 @@ Python 3.11+. SQLite via stdlib.
 **`threads_keyword_search` requires Meta App Review approval + a published app.**
 Until approved, the endpoint returns only the authenticated user's *own* posts —
 no public search. The operator currently has a Threads account only (no Meta app).
-Unblocking requires the STEP 3 App Review package (in progress) and operator action.
+Unblocking requires the STEP 3 App Review package (done — see `docs/review/`) and
+operator action in the Meta App Dashboard. **No live call has been made.**
 
-## 8. Next milestone
+## 8. Completed work (to v0.2-app-review-prep)
 
-1. **Real-inventory dry-run** — operator supplies a sanitized `inventory.csv`;
-   run all 20 synthetic posts against it and review scoring/matching. See `RUNBOOK.md`.
-2. **Meta App Review package** — checklist, reviewer instructions, permission
-   justification, privacy policy, data-deletion, screen-recording script, smoke-test
-   plan; decide if a minimal reviewer UI is needed. (STEP 3.)
-3. **After approval** — enable live `--source threads`, then (separately) schedule
-   scans via a Hermes cron. **Not built yet, by instruction.**
+- STEP 1 — Frozen MVP: full suite green, compliance verified, `v0.1-synthetic-mvp` tag.
+- STEP 2 — Real-inventory dry-run guide (`RUNBOOK.md`) + `scripts/validate_inventory.py`
+  (PII-reject, canonical→matcher schema adapter) + `data/inventory_template.csv`.
+- STEP 3 — Meta App Review package: `META_APP_REVIEW_CHECKLIST.md`,
+  `PERMISSION_JUSTIFICATION.md`, `REVIEWER_INSTRUCTIONS.md`, `PRIVACY_POLICY_DRAFT.md`,
+  `DATA_DELETION_INSTRUCTIONS.md`, `SCREEN_RECORDING_SCRIPT.md`, `LIVE_SMOKE_TEST_PLAN.md`,
+  `REVIEWER_UI_ASSESSMENT.md`.
 
-## 9. Rollback
+## 9. Next milestone (in progress)
 
-The frozen, verified state is the tag `v0.1-synthetic-mvp`. To return to it:
+1. **Streamlit reviewer demo** — *approved*. A minimal, read-only App Review surface
+   (Connect Threads · Keyword · Location · Run Search · Results · Classification/
+   score · Matches) built on a dedicated branch, gated behind `THREADS_LIVE_ENABLED=false`.
+   Synthetic mode works without credentials; no write/contact endpoints. (STEP 2–4.)
+2. **Real-inventory dry-run** — operator supplies sanitized `inventory_real.csv`;
+   still pending input. See `RUNBOOK.md`.
+3. **After approval** — enable live mode, then (separately) schedule scans via a
+   Hermes cron. **Not built yet, by instruction.**
+
+## 10. Run commands
+
 ```bash
-git checkout v0.1-synthetic-mvp        # detached HEAD at the frozen MVP
-# or, to reset a branch hard (destructive):
-git reset --hard v0.1-synthetic-mvp
+cd ~/rental-demand-signal-agent
+python -m pip install -e .[test]        # install + dev deps
+python -m pytest -q                     # 13 passed, offline
+
+# Offline synthetic pipeline (dry-run, no Telegram send):
+export RDSA_DB_PATH=data/dev.sqlite3
+python -m rdsa.cli init-db
+python -m rdsa.cli scan --source synthetic --dry-run
+python -m rdsa.cli list --class hot_lead
+python -m rdsa.cli status 4001 reviewed
+
+# Reviewer demo (after STEP 2-4 build), Synthetic mode by default:
+streamlit run app_review_demo.py        # or: python -m rdsa.app_review_demo
+```
+
+## 11. Rollback
+
+Two safe tags exist:
+```bash
+git checkout v0.2-app-review-prep      # detached HEAD at App Review prep (documents + demo build)
+git checkout v0.1-synthetic-mvp        # detached HEAD at the frozen core MVP
+# destructive reset of a branch:
+git reset --hard v0.2-app-review-prep
 ```
