@@ -133,6 +133,18 @@ class ApifyThreadsProvider:
         import re
         return re.sub(r"(token=)[^&;\s]+", r"\1***", str(url_or_text))
 
+    @staticmethod
+    def _observe_fields(items):
+        """Sanitized observability: log only counts and field names (no content)."""
+        if not isinstance(items, list):
+            return
+        print(f"[apify-observe] dataset items: {len(items)}")
+        if items:
+            keys = sorted({k for it in items if isinstance(it, dict) for k in it.keys()})
+            print(f"[apify-observe] field names: {keys}")
+
+
+
     def preflight(self, timeout=30):
         """GET /v2/acts/{actor_id} without starting a paid run.
 
@@ -224,8 +236,8 @@ class ApifyThreadsProvider:
         for query in queries:
             if len(results) >= max_total:
                 break
-            start_url = f"{self.BASE_URL}/acts/{self.normalized_actor_id}/runs?token={self.token}"
-            response = self._request("post", start_url, timeout, json={"mode": "search", "searchQueries": [query], "maxPosts": max_posts_per_query, "maxTotalChargeUsd": max_total_charge_usd})
+            start_url = f"{self.BASE_URL}/acts/{self.normalized_actor_id}/runs?token={self.token}&maxTotalChargeUsd={max_total_charge_usd}"
+            response = self._request("post", start_url, timeout, json={"mode": "search", "searchQueries": [query], "maxPosts": max_posts_per_query})
             payload = self._json(response)
             run = payload.get("data", payload) if isinstance(payload, dict) else {}
             run_id = run.get("id", run.get("runId")) if isinstance(run, dict) else None
@@ -247,13 +259,19 @@ class ApifyThreadsProvider:
                 time.sleep(0.05)
             else:
                 raise ApifyError("Apify actor status polling exceeded poll limit")
-            items_response = self._request("get", f"{self.BASE_URL}/actor-runs/{run_id}/dataset/items?token={self.token}", timeout,)
+            dataset_id = status_obj.get("defaultDatasetId")
+            if not dataset_id and isinstance(run, dict):
+                dataset_id = run.get("defaultDatasetId")
+            items_url = f"{self.BASE_URL}/datasets/{dataset_id}/items?token={self.token}" if dataset_id else f"{self.BASE_URL}/actor-runs/{run_id}/dataset/items?token={self.token}"
+            items_response = self._request("get", items_url, timeout)
             try:
                 items = self._json(items_response)
             except ApifyError:
                 return results
             if not isinstance(items, list):
                 items = items.get("items", []) if isinstance(items, dict) else []
+            # Sanitized observability: counts + field names only (no content/token).
+            self._observe_fields(items)
             self.usage.record_run({**run, **status_obj})
             for item in items[:max_posts_per_query]:
                 normalized = self.normalize(item)
