@@ -63,6 +63,10 @@ else:  # genuine seeker
     else:                            class = irrelevant
 ```
 
+An unclear post with genuine rental context (a rental keyword plus a location
+or property type) is a weak/ambiguous seeker and is classed `watch`, rather
+than `irrelevant`.
+
 ### Band thresholds
 
 | Band | Score range | Class | Sent to Telegram? |

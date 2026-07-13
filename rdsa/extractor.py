@@ -24,7 +24,7 @@ def _amount(number, suffix=""):
 
 def extract(post, now=None):
     text = post.get("text", ""); low = text.lower()
-    seeking = bool(re.search(r"\b(butuh|cari|pengen cari|looking for|apartment needed|mau cari|sewa)\b", low)) or bool(re.search(r"\bneed\s+(?:an?\s+)?(?:apartment|house|home|kontrakan)\b", low)) or "info kontrakan" in low
+    seeking = bool(re.search(r"\b(butuh|cari(?!\s+info\b)|pengen cari|looking for|apartment needed|mau cari|sewa)\b", low)) or bool(re.search(r"\bneed\s+(?:an?\s+)?(?:apartment|house|home|kontrakan)\b", low)) or ("info" in low and re.search(r"\b(?:kontrakan|apartemen|apartment|rumah|kost)\b", low) and not re.search(r"\bcari\s+info\b", low))
     offering = bool(re.search(r"\b(disewakan|for rent|tersedia|unit terbatas|harga terbaik|wa admin|contact us)\b", low))
     intent = "offering" if offering else "seeking" if seeking else "unclear"
     location = next((label for label, aliases in LOCATIONS if any(a in low for a in aliases)), None)
