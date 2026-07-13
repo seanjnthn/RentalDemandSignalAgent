@@ -249,15 +249,15 @@ class ApifyThreadsProvider:
         run_id = run.get("id", run.get("runId")) if isinstance(run, dict) else None
         if not run_id: raise ApifyError("Apify run response did not contain a run id")
         deadline=time.monotonic()+timeout; status_obj=run
-        for _ in range(30):
-            if time.monotonic() >= deadline: raise ApifyError("Apify actor status polling timed out")
+        while time.monotonic() < deadline:
             status_payload=self._json(self._request("get",f"{self.BASE_URL}/actor-runs/{run_id}?token={self.token}",timeout))
             status_obj=status_payload.get("data",status_payload) if isinstance(status_payload,dict) else {}
             status=status_obj.get("status") if isinstance(status_obj,dict) else None
             if status == "SUCCEEDED": break
             if status in {"FAILED","TIMED-OUT","ABORTED"}: raise ApifyError(f"Apify actor run {status.lower()}")
             time.sleep(.05)
-        else: raise ApifyError("Apify actor status polling exceeded poll limit")
+        else:
+            raise ApifyError("Apify actor status polling exceeded poll limit")
         dataset_id=status_obj.get("defaultDatasetId") if isinstance(status_obj,dict) else None
         items_url=f"{self.BASE_URL}/datasets/{dataset_id}/items?token={self.token}" if dataset_id else f"{self.BASE_URL}/actor-runs/{run_id}/dataset/items?token={self.token}"
         items=self._json(self._request("get",items_url,timeout)); items=items if isinstance(items,list) else items.get("items",[]) if isinstance(items,dict) else []
