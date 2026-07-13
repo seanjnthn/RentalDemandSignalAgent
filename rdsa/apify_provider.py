@@ -177,10 +177,23 @@ class ApifyThreadsProvider:
         text = raw_item.get("text")
         if not post_id or not isinstance(text, str) or not text.strip():
             return None
+        ts = raw_item.get("timestamp", raw_item.get("createdAt", raw_item.get("time", "")))
+        # Apify may return the timestamp as an epoch int (seconds or ms).
+        # Normalize to an ISO-8601 UTC string so the scorer can parse it.
+        if isinstance(ts, (int, float)) and not isinstance(ts, bool):
+            ts = float(ts)
+            if ts > 1e12:  # milliseconds
+                ts = ts / 1000.0
+            try:
+                ts = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            except (ValueError, OSError, OverflowError):
+                ts = ""
+        elif not isinstance(ts, str):
+            ts = str(ts) if ts else ""
         return {
             "id": str(post_id),
             "text": text,
-            "timestamp": raw_item.get("timestamp", raw_item.get("createdAt", raw_item.get("time", ""))) or "",
+            "timestamp": ts,
             "username": raw_item.get("username", raw_item.get("userName", "")) or "",
             "permalink": raw_item.get("permalink") or raw_item.get("url") or raw_item.get("postUrl") or "",
         }
