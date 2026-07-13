@@ -16,3 +16,4 @@ build/
 data/inventory_real.csv
 data/inventory_adapted.csv
 data/*dryrun*.sqlite3
+.codex_demo.md
