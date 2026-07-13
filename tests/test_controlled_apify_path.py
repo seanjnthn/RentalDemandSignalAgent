@@ -17,6 +17,9 @@ class FakeSession:
         self.by_run[rid] = [{"id": f"{rid}-1", "text": "cari apartemen BSD 2 kamar 6 jt/bulan secepatnya", "username": "public_renter", "timestamp": "2026-07-13T00:00:00Z", "permalink": "https://threads.net/@public_renter/post/1"}, {"id": "duplicate", "text": "cari apartemen BSD 2 kamar 6 jt/bulan", "username": "public_renter", "timestamp": "2026-07-13T00:00:00Z", "permalink": "https://threads.net/@public_renter/post/duplicate"}, {"id": f"{rid}-spam", "text": "harga terbaik hubungi wa admin apartemen BSD", "username": "agent", "timestamp": "2026-07-13T00:00:00Z", "permalink": "https://threads.net/@agent/post/spam"}]
         return Response({"data": {"id": rid}})
     def get(self, url, **kwargs):
+        if "/actor-runs/" not in url:
+            # Preflight GET /acts/{id} — return a 200 meta response.
+            return Response({"data": {"id": "meta", "status": "SUCCEEDED"}})
         rid = url.split("/actor-runs/")[1].split("/")[0]
         if "dataset" in url: return Response(self.by_run[rid])
         return Response({"data": {"status": "SUCCEEDED", "computeUnits": 0.1}})

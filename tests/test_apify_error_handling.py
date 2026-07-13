@@ -22,6 +22,7 @@ def test_malformed_dataset_is_empty(monkeypatch, tmp_path):
 def test_429_is_quota_after_retries(monkeypatch):
     monkeypatch.setenv("APIFY_LIVE_ENABLED", "true")
     class S:
+        def get(self, *a, **k): return Response(200, {"data": {"id": "x"}})
         def post(self, *a, **k): return Response(429, {"error": "quota exceeded"})
     with pytest.raises(ApifyQuotaError): ApifyThreadsProvider(token="t", session=S()).search(["q"])
 
@@ -29,15 +30,17 @@ def test_429_is_quota_after_retries(monkeypatch):
 def test_5xx_retries_then_errors(monkeypatch):
     monkeypatch.setenv("APIFY_LIVE_ENABLED", "true")
     class S:
-        def __init__(self): self.calls = 0
-        def post(self, *a, **k): self.calls += 1; return Response(503)
+        def __init__(self): self.post_calls = 0
+        def get(self, *a, **k): return Response(200, {"data": {"id": "x"}})
+        def post(self, *a, **k): self.post_calls += 1; return Response(503)
     s = S()
     with pytest.raises(ApifyError): ApifyThreadsProvider(token="t", session=s).search(["q"])
-    assert s.calls == 3
+    assert s.post_calls == 3
 
 
 def test_timeout_is_clear_error(monkeypatch):
     monkeypatch.setenv("APIFY_LIVE_ENABLED", "true")
     class S:
+        def get(self, *a, **k): return Response(200, {"data": {"id": "x"}})
         def post(self, *a, **k): raise requests.Timeout("slow")
     with pytest.raises(ApifyError, match="timed out"): ApifyThreadsProvider(token="t", session=S()).search(["q"])

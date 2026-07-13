@@ -15,6 +15,10 @@ class ApifyError(RuntimeError):
     """An Apify request or actor execution failed."""
 
 
+class ApifyConfigError(ApifyError):
+    """The configured Actor ID is malformed or unusable."""
+
+
 class ApifyQuotaError(ApifyError):
     """Apify rejected a request because of quota or a platform limit."""
 
@@ -91,8 +95,67 @@ class ApifyThreadsProvider:
     def __init__(self, token=None, actor_id=None, session=None):
         self.token = token if token is not None else os.getenv("APIFY_API_TOKEN", "")
         self.actor_id = actor_id or os.getenv("APIFY_ACTOR_ID", "automation-lab/threads-scraper")
+        self.normalized_actor_id = self.normalize_actor_id(self.actor_id)
         self.session = session or requests
         self.usage = MonthlyUsageGuard()
+
+    @staticmethod
+    def normalize_actor_id(actor_id):
+        """Normalize an Actor ID for the raw Apify REST API.
+
+        - ``owner/actor-name`` -> ``owner~actor-name`` (REST requires ``~``)
+        - ``owner~actor-name`` -> unchanged (avoid double conversion)
+        - numeric Actor ID      -> unchanged
+        - anything else         -> ApifyConfigError
+        """
+        aid = (actor_id or "").strip()
+        if not aid:
+            raise ApifyConfigError("APIFY_ACTOR_ID is empty")
+        # Already in REST form with '~': leave unchanged.
+        if "~" in aid and "/" not in aid:
+            return aid
+        # Numeric ID (optionally with a '~'): leave unchanged.
+        if aid.replace("~", "").isdigit():
+            return aid
+        # owner/name form: convert the FIRST '/' only to '~'.
+        if "/" in aid:
+            owner, _, name = aid.partition("/")
+            owner = owner.strip()
+            name = name.strip()
+            if not owner or not name:
+                raise ApifyConfigError(f"malformed Actor ID: {aid!r}")
+            return f"{owner}~{name}"
+        raise ApifyConfigError(f"malformed Actor ID: {aid!r}")
+
+    @staticmethod
+    def redact(url_or_text):
+        """Return text with any token query param redacted."""
+        import re
+        return re.sub(r"(token=)[^&;\s]+", r"\1***", str(url_or_text))
+
+    def preflight(self, timeout=30):
+        """GET /v2/acts/{actor_id} without starting a paid run.
+
+        Returns the HTTP status code. Raises typed Apify errors on
+        auth/access/404/other failures so callers can stop safely.
+        Reads the raw status (does not raise on non-2xx) so we can
+        classify 401/403/404 explicitly before any spend.
+        """
+        url = f"{self.BASE_URL}/acts/{self.normalized_actor_id}?token={self.token}"
+        try:
+            response = self.session.get(url, timeout=timeout)
+        except requests.Timeout as exc:
+            raise ApifyError("Apify preflight timed out") from exc
+        except requests.RequestException as exc:
+            raise ApifyError(f"Apify preflight request failed: {exc}") from exc
+        status = getattr(response, "status_code", 200)
+        if status == 401 or status == 403:
+            raise ApifyError(f"Apify authentication/access problem (HTTP {status})")
+        if status == 404:
+            raise ApifyError(f"Apify Actor ID not found (HTTP 404): {self.normalized_actor_id}")
+        if status >= 400:
+            raise ApifyError(f"Apify preflight failed (HTTP {status})")
+        return status
 
     @staticmethod
     def normalize(raw_item):
@@ -155,11 +218,13 @@ class ApifyThreadsProvider:
             raise ApifyError("APIFY_API_TOKEN is required when Apify live is enabled")
         if self.usage.check_budget() == "stop":
             raise ApifyBudgetExceeded("Apify monthly usage budget exceeded")
+        # Preflight: confirm the Actor exists before spending anything.
+        self.preflight(timeout)
         results = []
         for query in queries:
             if len(results) >= max_total:
                 break
-            start_url = f"{self.BASE_URL}/acts/{self.actor_id}/runs?token={self.token}"
+            start_url = f"{self.BASE_URL}/acts/{self.normalized_actor_id}/runs?token={self.token}"
             response = self._request("post", start_url, timeout, json={"mode": "search", "searchQueries": [query], "maxPosts": max_posts_per_query, "maxTotalChargeUsd": max_total_charge_usd})
             payload = self._json(response)
             run = payload.get("data", payload) if isinstance(payload, dict) else {}
