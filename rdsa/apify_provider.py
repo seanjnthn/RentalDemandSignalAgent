@@ -70,8 +70,13 @@ class MonthlyUsageGuard:
 
     def record_run(self, run_obj):
         units = run_obj.get("computeUnits") if isinstance(run_obj, dict) else None
-        cost = float(units) * self.price_per_cu if units is not None else 0.10
+        estimated = float(units) * self.price_per_cu if units is not None else 0.10
+        # Prefer the ACTUAL cost the platform reports, if present.
+        actual = run_obj.get("usageTotalUsd")
+        actual = float(actual) if isinstance(actual, (int, float)) else None
+        cost = actual if actual is not None else estimated
         self._state["estimated_usd"] = round(self.total_usd + cost, 4)
+        self._state["actual_usd"] = round(float(self._state.get("actual_usd", 0.0)) + (actual or 0.0), 4)
         self._state["runs"] = int(self._state.get("runs", 0)) + 1
         self._save()
         return cost
@@ -143,7 +148,7 @@ class ApifyThreadsProvider:
         except (ValueError, TypeError, AttributeError) as exc:
             raise ApifyError("Apify returned malformed JSON") from exc
 
-    def search(self, queries, max_posts_per_query=5, timeout=60, max_total=20):
+    def search(self, queries, max_posts_per_query=5, timeout=60, max_total=20, max_total_charge_usd=0.10):
         if not apify_live_enabled():
             raise ApifyError("Apify live disabled; set APIFY_LIVE_ENABLED=true to enable it")
         if not self.token:
@@ -155,7 +160,7 @@ class ApifyThreadsProvider:
             if len(results) >= max_total:
                 break
             start_url = f"{self.BASE_URL}/acts/{self.actor_id}/runs?token={self.token}"
-            response = self._request("post", start_url, timeout, json={"mode": "search", "searchQueries": [query], "maxPosts": max_posts_per_query})
+            response = self._request("post", start_url, timeout, json={"mode": "search", "searchQueries": [query], "maxPosts": max_posts_per_query, "maxTotalChargeUsd": max_total_charge_usd})
             payload = self._json(response)
             run = payload.get("data", payload) if isinstance(payload, dict) else {}
             run_id = run.get("id", run.get("runId")) if isinstance(run, dict) else None
