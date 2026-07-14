@@ -31,6 +31,7 @@ def format_preview_card(lead, matching_enabled=True):
     if not matching_enabled: matches_block="Inventory matches: Not configured"
     else:
         lines="\n".join(f"{i}. {_safe(m.get('inventory_id','unknown'))} — {m.get('score',0)}" for i,m in enumerate(matches[:3],1)) or "No suitable unit found"
+        lines="\n".join(f"{i}. {_safe(m.get('property_id',m.get('inventory_id','unknown')))} - {m.get('match_type','exact_match')} - {m.get('score',0)}" + (f" ({_safe(m.get('warnings',[None])[0])})" if m.get('warnings') else "") for i,m in enumerate(matches[:3],1)) or "No suitable unit found"
         matches_block="Inventory matches: No suitable unit found" if not matches else f"Inventory matches:\n{lines}"
     budget=_get(lead,"budget_max") or _get(lead,"budget_min")
     budget_confidence=_get(lead,"budget_confidence","low")

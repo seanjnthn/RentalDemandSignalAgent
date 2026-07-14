@@ -301,6 +301,14 @@ no cron/scheduler. Suite: **70 passed**.
 3. **After approval** — enable live mode, then (separately) schedule scans via a
    Hermes cron. **Not built yet, by instruction.**
 
+### 8.8. v0.5.1 matching-quality hardening (offline)
+
+- Matching returns structured `property_id`, `match_type`, `score`, `reasons`, and `warnings` fields. Tiers are `exact_match`, `nearby_alternative`, `tentative_match`, and `no_match`; only exact and explicitly configured nearby candidates are confirmed for display.
+- Areas are canonicalized to BSD, Gading Serpong, Alam Sutera, Suvarna Sutera, or Tangerang Selatan. BSD and Gading Serpong remain distinct; the configurable nearby map contains only the explicit BSD/Gading Serpong pair.
+- Unknown location and unknown budget period cannot produce an exact match. Medium-confidence budgets remain tentative; budget comparisons use matching periods or explicit conversion.
+- `matched_inventory` persists the actual structured match list and normalizes legacy `[null]`/`[None]` values to `[]` on read/write. Historical `alerts` rows are not rewritten.
+- Current-scan metrics report extracted target-area leads, exact/nearby/tentative/no-match counts, and unknown-location leads. Pilot-send no longer prints cards before the single render/send path.
+
 ## 10. Run commands
 
 ```bash

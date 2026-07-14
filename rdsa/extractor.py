@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
 from .budget_parser import parse_budget
+from .config import canonical_area
 
 LOCATIONS = [("Tangerang Selatan", ("tangerang selatan", "tangsel")), ("Gading Serpong", ("gading serpong",)), ("Alam Sutera", ("alam sutera",)), ("BSD", ("bsd",)), ("Serpong", ("serpong",)), ("Tangerang", ("tangerang",))]
 
@@ -23,7 +24,8 @@ def extract(post, now=None):
     seeking = bool(re.search(r"\b(butuh|cari(?!\s+info\b)|pengen cari|looking for|apartment needed|mau cari|sewa)\b", low)) or bool(re.search(r"\bneed\s+(?:an?\s+)?(?:apartment|house|home|kontrakan)\b", low)) or ("info" in low and re.search(r"\b(?:kontrakan|apartemen|apartment|rumah|kost)\b", low) and not re.search(r"\bcari\s+info\b", low))
     offering = bool(re.search(r"\b(disewakan|for rent|tersedia|unit terbatas|harga terbaik|wa admin|contact us)\b", low))
     intent = "offering" if offering else "seeking" if seeking else "unclear"
-    location = next((label for label, aliases in LOCATIONS if any(a in low for a in aliases)), None)
+    detected_location = next((label for label, aliases in LOCATIONS if any(a in low for a in aliases)), None)
+    location = canonical_area(detected_location) or detected_location
     confidence = 1.0 if location else 0.0
     if location == "Serpong" or location == "Tangerang": confidence = .7
     ptype = "unknown"

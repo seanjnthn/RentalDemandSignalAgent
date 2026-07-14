@@ -41,16 +41,24 @@ def process_raw(raw_posts, source, args, c, inventory_mode=None):
         print("Real inventory is not configured. Lead discovery will continue, but inventory matching is disabled.")
     old=existing(c) if c is not None else []
     new=alerts=duplicates=preview_count=normalized_posts=inventory_matches=0; classes={}; target_location=0; run_leads=[]
-    target_areas = {loc[0] for loc in config.LOCATIONS}
+    exact_area_matches=nearby_alternatives=tentative_matches=no_matches=unknown_location_leads=0
+    target_areas = set(config.CANONICAL_AREAS) - {"Suvarna Sutera"}
     for item in raw_posts:
         post=item.get('post', item) if isinstance(item, dict) else item
         normalized_posts += 1
         lead=score(extract(post)); classify(lead)
         if is_duplicate(lead,old): duplicates+=1; continue
         if lead.desired_location in target_areas: target_location += 1
+        if lead.desired_location is None: unknown_location_leads += 1
         if lead.lead_class in ('hot_lead','qualified_lead') and matching_enabled:
             lead.matched_inventory=match(lead,inv)
             inventory_matches += len(lead.matched_inventory)
+            for candidate in lead.matched_inventory:
+                kind = candidate["match_type"]
+                if kind == "exact_match": exact_area_matches += 1
+                elif kind == "nearby_alternative": nearby_alternatives += 1
+                elif kind == "tentative_match": tentative_matches += 1
+                elif kind == "no_match": no_matches += 1
         if c is not None:
             upsert_lead(c,lead,source)
         old.append({'post_id':lead.post_id,'author_username':lead.author_username,'dedup_hash':lead.dedup_hash,'raw_text':lead.raw_text}); new+=1
@@ -63,7 +71,10 @@ def process_raw(raw_posts, source, args, c, inventory_mode=None):
                 if mark_alert(c,lead.post_id): TelegramNotifier(config.TELEGRAM_BOT_TOKEN,config.TELEGRAM_CHAT_ID).send(format_card(lead)); alerts+=1
     return {'raw_posts': len(raw_posts), 'normalized_posts': normalized_posts,
             'duplicates': duplicates, 'new_rows': new, 'classifications': classes,
-            'target_location': target_location, 'inventory_matches': inventory_matches,
+            'target_location': target_location, 'extracted_target_area_leads': target_location,
+            'exact_area_matches': exact_area_matches, 'nearby_alternatives': nearby_alternatives,
+            'tentative_matches': tentative_matches, 'no_matches': no_matches,
+            'unknown_location_leads': unknown_location_leads, 'inventory_matches': inventory_matches,
             'leads': run_leads,
             'preview_count': preview_count, 'matching_enabled': matching_enabled,
             # Compatibility for callers of the original per-scan result.
@@ -115,7 +126,9 @@ def run_pilot_scan(args):
             "estimated_usd": guard.estimated_usd, "actual_usd": guard.actual_usd,
             "note": "maxTotalChargeUsD is a per-run cap; monthly accumulation may include earlier canary runs."}
     current_keys = ("raw_posts", "normalized_posts", "duplicates", "new_rows", "classifications",
-                    "target_location", "inventory_matches", "preview_count")
+                    "target_location", "extracted_target_area_leads", "exact_area_matches",
+                    "nearby_alternatives", "tentative_matches", "no_matches", "unknown_location_leads",
+                    "inventory_matches", "preview_count")
     report = {"current": {key: result[key] for key in current_keys}, "cumulative": cumulative,
               "cost": cost, "evaluation": evaluation}
     print(f"Pilot scan complete: {result['new_rows']} new leads, {result['duplicates']} duplicates (preview only)")
@@ -156,14 +169,13 @@ def run_pilot_send(args):
     args.pilot=True; args.dry_run=True
     result=process_raw(raw, "apify", args, c, inventory_mode="real")
     eligible=[lead for lead in result["leads"] if preview_eligible(lead)]
-    for lead in eligible: print(format_preview_card(lead, matching_enabled=True)); print()
     delivered=send_lead_cards(TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_ALLOWED_CHAT_ID), eligible, c,
                               matching_enabled=True, posts_scanned=result["raw_posts"], new_leads=result["new_rows"])
     cumulative=_cumulative_report(c); evaluation=_evaluation_report(c); guard=provider.usage
     cost={"current_run_usage_usd":getattr(provider,"last_run_usd",None),"monthly_accumulated_usd":guard.accumulated_usd,
           "warn_usd":guard.warn_usd,"stop_usd":guard.stop_usd,"remaining_usd":guard.remaining,
           "estimated_usd":guard.estimated_usd,"actual_usd":guard.actual_usd}
-    report={"current":{k:result[k] for k in ("raw_posts","normalized_posts","duplicates","new_rows","classifications","target_location","inventory_matches","preview_count")},
+    report={"current":{k:result[k] for k in ("raw_posts","normalized_posts","duplicates","new_rows","classifications","target_location","extracted_target_area_leads","exact_area_matches","nearby_alternatives","tentative_matches","no_matches","unknown_location_leads","inventory_matches","preview_count")},
             "cumulative":cumulative,"cost":cost,"evaluation":evaluation,"delivery":{"sent":delivered,"max_cards":3}}
     print(json.dumps({"delivery":report["delivery"],"cost":cost}, indent=2))
     return report
