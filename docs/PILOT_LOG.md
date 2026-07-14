@@ -149,8 +149,26 @@ Assessment: rental-intent reliability mixed (1 likely offering); location reliab
 ## Run #3 — 2026-07-14 (same workflow)
 
 1 batched Actor run (maxPosts=5 ×4 queries).
-- **Raw:** 20 · **Dup:** 17 · **New:** 3 (irrelevant:1, watch:2) · **Eligible:** 0 → 0 lead cards; 1 run-summary msg (ID **20**)
-- **Cost:** current $0.095 · monthly $0.637 · remaining $4.113
+
+**Current-run metrics (this scan):**
+- **Raw posts:** 20
+- **Normalized posts:** 20
+- **Duplicates:** 17
+- **New leads:** 3 (irrelevant:1, watch:2)
+- **Eligible leads (hot/qualified):** 0
+- **Delivered leads (lead cards):** 0 (1 run-summary message ID 20)
+- **Extracted target-area leads:** 0
+- **Unknown-location leads:** 3
+- **Exact matches:** 0
+- **Nearby alternatives:** 0
+- **Tentative matches:** 0
+- **No matches:** 0
+- **Current-run `usageTotalUsd`:** $0.095
+- **Monthly accumulated usage:** $0.637
+
+**Cumulative (after this run):** 77 total leads; monthly accumulated Apify usage $0.637; remaining budget $4.113.
+
+Original prose:
 - **Extraction (3 new):** budget low:2/medium:1; location unknown 3/3; type failures 0; bedroom failures 1
 - New leads: `3940785104167711039` (irrelevant), `3940782638403487161` (watch 53, house 30-600M/mo, high conf budget), `3825041513746892069` (watch 37, apartment)
 - No cron · Send restored false · Suite 78 passed
@@ -158,8 +176,26 @@ Assessment: rental-intent reliability mixed (1 likely offering); location reliab
 ## Run #4 — 2026-07-14 (same workflow)
 
 1 batched Actor run (maxPosts=5 ×4 queries).
-- **Raw:** 20 · **Dup:** 19 · **New:** 1 (irrelevant:1) · **Eligible:** 0 → 0 lead cards; 1 run-summary msg (ID **21**)
-- **Cost:** current $0.095 · monthly $0.732 · remaining $4.018
+
+**Current-run metrics (this scan):**
+- **Raw posts:** 20
+- **Normalized posts:** 20
+- **Duplicates:** 19
+- **New leads:** 1 (irrelevant:1)
+- **Eligible leads (hot/qualified):** 0
+- **Delivered leads (lead cards):** 0 (1 run-summary message ID 21)
+- **Extracted target-area leads:** 0
+- **Unknown-location leads:** 1
+- **Exact matches:** 0
+- **Nearby alternatives:** 0
+- **Tentative matches:** 0
+- **No matches:** 0
+- **Current-run `usageTotalUsd`:** $0.095
+- **Monthly accumulated usage:** $0.732
+
+**Cumulative (after this run):** 78 total leads; monthly accumulated Apify usage $0.732; remaining budget $4.018.
+
+Original prose:
 - **Extraction (1 new):** budget low:1; location unknown 1/1; type unknown; bedroom missing
 - New lead: `3940783718386605052` (irrelevant 12)
 - No cron · Send restored false · Suite 78 passed
@@ -208,3 +244,19 @@ All four runs used identical gated workflow: one batched Apify run (apartemen / 
 ### Post-comparison safety state
 - `APIFY_LIVE_ENABLED=false` ✅ · `RDSA_TELEGRAM_SEND_ENABLED=false` ✅
 - No cron · No author contact · No secrets committed · Suite 78 passed
+
+---
+
+## Dashboard acceptance review (v0.6)
+
+Branch `feature/v06-operational-dashboard` reviewed against the pilot database and real inventory (no Apify/Telegram calls). All six pages (Overview, Lead Inbox, Lead Detail, Inventory, Matching Review, Pilot Analytics) passed acceptance: metrics load, current/cumulative are not mixed, filters work, no misleading false-positive metric, costs clearly labeled, legacy `[null]` matches render as no match, canonical areas distinct (BSD ≠ Gading Serpong), nearby alternatives not shown as exact, unknown-location matches tentative, confirmation warnings visible, exactly 3 real inventory rows load (no synthetic), furnished values human-readable, placeholder URLs marked pending, and writes are limited to status/notes/reviewed_at/audit (Telegram history read-only).
+
+**Blocking defects found and fixed (smallest change, `rdsa/dashboard_repository.py`):**
+1. Overview `apify_cost` always $0.000 — read `usage.get("runs", …)` but the usage file has no list; now reads `actual_usd`/`estimated_usd`. Displays cumulative $0.74x.
+2. Pilot Analytics cost-per-run showed $4.75 (stop threshold) — greedy regex matched the `stop $` line; now anchored to the `usageTotalUsd` value. Runs #1–#4 parse $0.095.
+
+**Controlled update verified:** lead `4001` set to `reviewed` + test note → audit entry created → restored to original; Telegram delivery history unchanged.
+
+**PILOT_LOG normalization:** Runs #3/#4 rewritten with the standard metric labels (including `usageTotalUsd` and unknown-location), using only originally recorded values; no invented/threshold-derived figures.
+
+Final: suite 86 passed · Streamlit HTTP 200 · no credentials/chat-ID exposed · no synthetic inventory · working tree contains only intended changes.

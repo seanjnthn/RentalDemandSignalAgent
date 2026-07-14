@@ -131,8 +131,10 @@ def get_overview(filters: dict[str, Any] | None = None, db_path: str | Path = DE
     usage_path = Path(db_path).parent / "apify_usage.json"
     try:
         usage = json.loads(usage_path.read_text(encoding="utf-8"))
-        if isinstance(usage, dict): usage = usage.get("runs", usage.get("usage", []))
-        cost = sum(float(x.get("usageTotalUsd", 0) or 0) for x in usage if isinstance(x, dict))
+        if isinstance(usage, dict):
+            cost = float(usage.get("actual_usd") or usage.get("estimated_usd") or 0)
+        else:
+            cost = 0.0
     except (OSError, ValueError, TypeError): cost = 0.0
     qualified = counts["hot_lead"] + counts["qualified_lead"]
     return {"total": len(leads), "new": statuses["new"], "hot": counts["hot_lead"], "qualified": counts["qualified_lead"], "watch": counts["watch"], "exact_match": matches["exact_match"], "nearby_alternative": matches["nearby_alternative"], "tentative_match": matches["tentative_match"], "no_match": matches["no_match"], "unknown_location": sum(x["desired_location"] == "Unknown" for x in leads), "telegram_delivered": delivered, "apify_cost": cost, "cost_per_qualified": cost / qualified if qualified else None}
@@ -193,6 +195,11 @@ def get_pilot_runs(log_path: str | Path | None = None, db_path: str | Path = DEF
         number = re.match(r"(\d+)", section)
         if not number: continue
         def metric(label: str) -> Any:
-            m = re.search("(?:" + label + r")[^\d]*(\d+(?:\.\d+)?)", section, re.I); return float(m.group(1)) if m and "." in m.group(1) else int(m.group(1)) if m else None
-        runs.append({"run": int(number.group(1)), "raw": metric(r"Raw posts|Raw"), "normalized": metric(r"Normalized"), "duplicates": metric(r"Duplicates|Dup"), "new": metric(r"New leads|New"), "unknown_location": metric(r"unknown-location leads|unknown location"), "apify_cost": metric(r"usageTotalUsd|Current.*\$"), "text": section[:1000]})
+            m = re.search("(?:" + label + ")[^\\d]*(\\d+(?:\\.\\d+)?)", section, re.I); return float(m.group(1)) if m and "." in m.group(1) else int(m.group(1)) if m else None
+        # Cost per run: read the current-run usageTotalUsd value specifically
+        # (non-greedy, anchored to the literal key) so we never capture the
+        # stop_usd threshold line further down the section.
+        cost_m = re.search("usageTotalUsd\\D*?(\\d+(?:\\.\\d+)?)", section, re.I)
+        apify_cost = float(cost_m.group(1)) if cost_m else None
+        runs.append({"run": int(number.group(1)), "raw": metric("Raw posts|Raw"), "normalized": metric("Normalized"), "duplicates": metric("Duplicates|Dup"), "new": metric("New leads|New"), "unknown_location": metric("unknown-location leads|unknown location"), "apify_cost": apify_cost, "text": section[:1000]})
     return runs
