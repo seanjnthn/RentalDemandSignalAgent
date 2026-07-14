@@ -249,32 +249,47 @@ cannot leak into live previews. Current-scan metrics are separate from cumulativ
 database metrics, and cost output separates current Actor `usageTotalUsd` from
 monthly accumulated usage, warn/stop thresholds, and remaining budget. Evaluation
 
-### 8.7. v0.5 private Telegram pilot (built; live test pending operator)
+### 8.7. v0.5 private Telegram pilot (built, live-validated, pre-merge fix applied)
 
-The private delivery pilot is built but has not been live-tested by Codex. Real
-inventory validation now reports sanitized counts, rejection reasons, area counts,
-and price ranges; absent inventory or hard validation errors stop `pilot-send`
-before any Apify call. `telegram-test` and `pilot-send` both require
-`--confirm-send`, `RDSA_TELEGRAM_SEND_ENABLED=true`, and the configured
-`TELEGRAM_ALLOWED_CHAT_ID`. Delivery is limited to three eligible cards per run,
-deduplicated through the SQLite `alerts` table (including Telegram `message_id`),
-and failures are redacted and do not mark leads sent. There is no scheduler,
-auto-contact, DM, publish, or dashboard behavior. Hermes must run the live test
-separately after supplying sanitized `data/inventory_real.csv` and operator-only
-credentials.
-uses honest reviewed/rejected/unreviewed counts; with no manual review it prints
-exactly `False-positive rate not yet established.`
+The private delivery pilot is fully built and **live-validated**:
+- **Telegram canary** (`telegram-test --confirm-send`): one sanitized test message
+  delivered to the approved private chat (id withheld), message id recorded, send
+  flag restored to false. Confirmed no other chat contacted, no Apify/Threads call.
+- **Live pilot** (`pilot-send --confirm-send`): one batched Apify Actor run
+  (`apartemen`/`rumah sewa`/`kontrakan`/`sewa apartemen`, maxPosts=5), 20 raw posts →
+  11 new leads persisted, 1 eligible (qualified_lead) → **1 Telegram card sent**
+  (≤3 cap), `current_run_usage_usd=0.095`, monthly accumulated ~$0.33 (well under
+  stop $4.75). No synthetic IDs; real-inventory matching returned 0 matches (lead
+  budget/location didn't align with the 3 real units). Duplicate-send prevention via
+  the SQLite `alerts` UNIQUE(post_id); `message_id` stored.
 
-The v0.5 pre-merge budget-parser fix adds confidence-aware Indonesian budget
-normalization, yearly-to-monthly matching conversion, plausible-range scoring
-guards, and unknown-budget matching behavior. Telegram canary evidence and live
-pilot evidence remain preview/delivery evidence only; this fix does not resend
-or mutate delivered alert history. Current safety defaults are `Live=false`,
-`Send=false`, and no cron/scheduler. Configured inventory with no match is shown
-as `Inventory matches: No suitable unit found`; absent or disabled inventory is
-shown as `Inventory matches: Not configured`.
+Controls (all verified in the live runs): `telegram-test` and `pilot-send` require
+`--confirm-send` + `RDSA_TELEGRAM_SEND_ENABLED=true` + configured `TELEGRAM_ALLOWED_CHAT_ID`;
+token is git-ignored and redacted from all errors/logs; delivery limited to 3 eligible
+cards/run; failures are redacted and do NOT mark leads sent or corrupt the DB; no
+scheduler, auto-contact, DM, publish, or dashboard.
 
-## 9. Next milestone (in progress)
+**Pre-merge budget-parser fix (this milestone):** `rdsa/budget_parser.py` normalizes
+Indonesian budgets with confidence: `rb`/`ribu`/`k` ×1,000; `jt`/`juta`/`m`/`million`
+×1,000,000; ranges ("3-4 juta" → 3M–4M); yearly→monthly equivalent; Indonesian decimal
+commas/thousands separators. A **bare number without magnitude/context** (e.g. "900") is
+NOT turned into 900 IDR — it returns `confidence=low`, amounts `None`. Scoring rule R3
+awards budget points **only** when confidence is medium/high AND the amount is within a
+plausible rental range (`config.BUDGET_PLAUSIBLE_MIN/MAX`); matcher ignores low-confidence
+budgets; Telegram shows `Budget: unclear — review original post` for low confidence,
+`Inventory matches: No suitable unit found` when configured inventory has zero matches,
+and `Inventory matches: Not configured` only when inventory is absent/disabled.
+
+**Offline reprocess of the canary lead** (`3940738558332110361`, "budget below RM900"):
+old parse `budget_max=900` → score 62 / `qualified_lead`; new parse `None/None`,
+`confidence=low` → score 47 / `watch`. The defect is corrected; classification no longer
+inflated by an ambiguous number. Reprocess was read-only; no resend, no alert-history
+mutation.
+
+Current safety defaults: `APIFY_LIVE_ENABLED=false`, `RDSA_TELEGRAM_SEND_ENABLED=false`,
+no cron/scheduler. Suite: **70 passed**.
+
+
 
 
 1. **Streamlit reviewer demo** — *approved*. A minimal, read-only App Review surface
