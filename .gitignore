@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .pytest-tmp/
+.pytest-tmp-*/
 .pytest-tmp-run/
 .pytest-tmp-new/
 .pytest-tmp-final/
