@@ -1,2 +1,4 @@
 property_id,area,building,property_type,bedrooms,monthly_price,furnished,available_from,features,status,listing_url
-P001,BSD,,apartment,2,7500000,1,2026-08-01,Near AEON;pool,available,https://example.com/listing/P001
+SYNTHETIC-P001,BSD City,Demo Tower,apartment,2,7500000,1,2026-08-01,SYNTHETIC ONLY;pool,available,https://example.invalid/SYNTHETIC-P001
+SYNTHETIC-P002,Alsut,Example Residence,apartment,1,4500000,0,2026-09-01,SYNTHETIC ONLY;near transit,available,https://example.invalid/SYNTHETIC-P002
+SYNTHETIC-P003,GS,Mock House,house,3,9000000,1,2026-10-01,SYNTHETIC ONLY;carport,rented,https://example.invalid/SYNTHETIC-P003

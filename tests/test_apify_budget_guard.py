@@ -19,3 +19,13 @@ def test_search_refuses_at_stop(monkeypatch, tmp_path):
     provider.usage = MonthlyUsageGuard(tmp_path / "usage.json")
     provider.usage._state["estimated_usd"] = 4.75
     with pytest.raises(ApifyBudgetExceeded): provider.search(["q"])
+
+
+def test_cost_report_keeps_run_and_monthly_values_distinct(tmp_path):
+    guard = MonthlyUsageGuard(tmp_path / "usage.json", warn_at_usd=1.0, stop_at_usd=2.0)
+    guard._state["actual_usd"] = 0.50
+    guard._state["estimated_usd"] = 0.50
+    guard.last_run_usd = 0.07
+    assert guard.last_run_usd == 0.07
+    assert guard.actual_usd == 0.50
+    assert guard.remaining == 1.50
