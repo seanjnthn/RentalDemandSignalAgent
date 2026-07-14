@@ -89,3 +89,57 @@ in-process only; `.env` unchanged).
 ### Re-evaluation (offline)
 
 No Apify or Telegram calls were made. Re-running the matcher and preview formatter against stored lead data is expected to classify BSD lead `3940755375813528375` against M-Town (Gading Serpong) as `nearby_alternative`, with area flexibility confirmation required. Unknown-location house lead `3940750095612586995` against Fedora (Suvarna Sutera) is expected to be `tentative_match`, with location confirmation required. Alerts 17/18 remain untouched.
+
+---
+
+## Run #2 — 2026-07-14 (baseline tag: v0.5.1-matching-hardening)
+
+**Command:** `pilot-send --confirm-send` (Apify + Telegram temporarily enabled in-process only; `.env` unchanged).
+
+### Preflight
+| # | Check | Result |
+|---|---|---|
+| 1 | Working tree clean | ✅ |
+| 2 | Secrets/runtime git-ignored (no token committed) | ✅ |
+| 3 | 3 real inventory units load | ✅ |
+| 4 | No synthetic inventory (`INVENTORY_MODE=real`) | ✅ |
+| 5 | Telegram destination = approved private chat `909767721` | ✅ |
+| 6 | Monthly Apify usage $0.445 << stop $4.75 | ✅ |
+
+### A. Current scan
+- **Raw posts:** 20 (1 batched Actor run; maxPosts=5 ×4 queries) · **Normalized:** 20
+- **Duplicates:** 17 · **New leads:** 3
+- **Classifications:** watch:2, irrelevant:1 (no hot_lead / qualified_lead this run)
+- **Extracted target-area leads:** 0 · **Unknown-location leads:** 3
+
+### B. Extraction quality (3 new leads)
+- **Budget confidence:** low:2, medium:1, high:0
+- **Unclear budgets:** 2 low-confidence (no reliable amount)
+- **Location extraction failures:** 3/3 unknown
+- **Property-type failures:** 0/3 (kontrakan, apartment×2 detected) · **Bedroom failures:** 1/3
+
+### C. Matching quality
+- Eligible leads (hot/qualified): **0** → matcher ran for none; exact:0, nearby:0, tentative:0, no_match:0.
+- No lead cards; nothing matched or displayed.
+
+### D. Telegram
+- **Eligible leads:** 0 → **Lead cards sent:** 0
+- **Run-summary message sent:** 1 (message ID **19**) — the "scan completed, no new eligible lead" notice (per spec when no eligible leads)
+- **Duplicate sends prevented:** ✅ (alerts table unchanged: still 3 prior rows; msg 19 maps to no lead)
+- **No other chat contacted:** ✅ (single summary to approved private chat only)
+
+### E. Cost
+- **Current-run `usageTotalUsd`:** $0.095 · **Monthly accumulated:** $0.54 · **Remaining:** $4.21 (stop $4.75)
+
+### F. Manual review
+No eligible/delivered **lead** cards this run (only the summary notice). The 3 new leads:
+- `3940773205228724478` (watch 53): kontrakan, 2 beds, unknown loc/budget — genuine-ish seeking but low signal; **uncertain**, not worth contacting yet.
+- `3940771546071772808` (watch 59): apartment, unknown beds/loc/budget — seeking signal, weak extraction; **uncertain**, not worth contacting yet.
+- `3940768555138762726` (irrelevant 30): apartment, budget 850M IDR (likely a sale/offering, not rental) — **not a rental lead** (false-positive-ish for rental intent); **not worth contacting**.
+
+Assessment: rental-intent reliability mixed (1 likely offering); location reliability none (all unknown); budget reliability low (2 unclear, 1 implausible 850M); no property matches to assess. Card wording accuracy: N/A (no lead cards). The summary message accurately reported "no eligible lead."
+
+### Post-run safety state
+- `APIFY_LIVE_ENABLED=false` ✅ · `RDSA_TELEGRAM_SEND_ENABLED=false` ✅
+- No cron · No author contact · No secrets committed
+- Full suite: **78 passed**
