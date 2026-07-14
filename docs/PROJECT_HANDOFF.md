@@ -309,6 +309,26 @@ no cron/scheduler. Suite: **70 passed**.
 - `matched_inventory` persists the actual structured match list and normalizes legacy `[null]`/`[None]` values to `[]` on read/write. Historical `alerts` rows are not rewritten.
 - Current-scan metrics report extracted target-area leads, exact/nearby/tentative/no-match counts, and unknown-location leads. Pilot-send no longer prints cards before the single render/send path.
 
+### 8.9. v0.6 operational lead dashboard (built; not merged)
+
+Local, read-only-by-default Streamlit review interface. No Apify/Threads/Telegram
+calls, no cron, no author contact, no `.env` changes, no synthetic inventory.
+
+- **Pages:** Overview (KPIs + filters), Lead Inbox (sortable/filterable table), Lead
+  Detail (editable status/notes/reviewed_at only), Inventory (real CSV viewer +
+  validation), Matching Review (grouped by match tier, nearby/tentative visually
+  distinct), Pilot Analytics (per-run metrics from DB + `PILOT_LOG.md`).
+- **Service layer:** `rdsa/dashboard_repository.py` — all DB access, parameterized
+  queries, legacy `[null]` match normalization, audit logging. UI never writes SQL.
+- **Writes allowlisted:** `leads.status`, `leads.notes`, `leads.reviewed_at`; audit
+  row in `status_history` with `source='dashboard'`. Schema migrated lazily/idempotently.
+- **Security:** token/chat-id/Apify never rendered; phone/email sanitized; no
+  `send_lead_cards`/`TelegramNotifier`/`apify_provider`/`requests`/synthetic paths in
+  dashboard code (static-checked). Alert history never modified.
+- **Verification:** 86 tests pass; dashboard serves HTTP 200 headless; all 7 scripts
+  import; status/notes update + audit insertion confirmed on the real pilot DB; no
+  secret exposure; no Apify/Telegram call.
+
 ## 10. Run commands
 
 ```bash
