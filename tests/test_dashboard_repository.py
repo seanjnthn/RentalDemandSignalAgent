@@ -26,10 +26,10 @@ def test_empty_database_and_lead_loading(tmp_path):
 
 def test_filters_and_legacy_match_shapes(tmp_path):
     path = tmp_path / "filter.sqlite3"
-    seed(path, [{"inventory_id": "LEGACY", "location": "Gading Serpong", "match_reasons": ["budget"]}])
+    seed(path, [{"inventory_id": "APT-GS-MTOWN-1BR-001", "location": "Gading Serpong", "match_reasons": ["budget"]}])
     assert len(get_leads({"classification": "hot_lead", "area": "BSD", "match_type": "nearby_alternative"}, path)) == 1
     assert normalize_matches("[null]") == []
-    assert normalize_matches([{ "inventory_id": "A", "location": "BSD", "match_reasons": ["x"] }], "BSD")[0]["match_type"] == "exact_match"
+    assert normalize_matches([{ "inventory_id": "A", "location": "BSD", "match_reasons": ["x"] }], "BSD")[0]["match_type"] == "legacy_synthetic"
 
 
 def test_real_inventory_missing_and_valid(tmp_path):
@@ -50,5 +50,5 @@ def test_status_notes_and_audit_are_parameterized(tmp_path):
 
 
 def test_matching_groups_have_stable_labels(tmp_path):
-    path = tmp_path / "groups.sqlite3"; seed(path, [{"property_id": "P", "match_type": "tentative_match", "score": 1, "reasons": [], "warnings": ["confirm"]}])
+    path = tmp_path / "groups.sqlite3"; seed(path, [{"property_id": "APT-GS-MTOWN-1BR-001", "match_type": "tentative_match", "score": 1, "reasons": [], "warnings": ["confirm"]}])
     assert get_matching_groups(path)["tentative_match"][0]["match"]["match_type"] == "tentative_match"

@@ -340,6 +340,55 @@ calls, no cron, no author contact, no `.env` changes, no synthetic inventory.
 - **Safety defaults:** `APIFY_LIVE_ENABLED=false`, `RDSA_TELEGRAM_SEND_ENABLED=false`, no
   cron, no recurring send, no Apify/Telegram buttons.
 
+### 8.10. v0.6.1 dashboard runtime + legacy-data fix (merged)
+
+Two operator-facing defects from v0.6, fixed on `fix/v061-dashboard-runtime-and-legacy-data`
+and merged as `v0.6.1-dashboard-runtime-fix`.
+
+**Defect 1 — dashboard needed `PYTHONPATH` set manually.** Real-browser launch from a
+fresh shell raised `ModuleNotFoundError: No module named 'dashboard'` because Streamlit
+adds only `dashboard/` to `sys.path`, not the repo root; the package-relative imports
+(`from dashboard.common`, `from rdsa...`) therefore failed unless `PYTHONPATH` pointed at
+the repo root.
+
+- **Why HTTP 200 alone failed to catch it:** Streamlit's bootstrap itself imports fine
+  and the headless server returns HTTP 200 even when the *page script* later fails to
+  import its modules — the error surfaces only as a Streamlit error box / traceback in the
+  browser, not in the HTTP status. A bare `curl` is therefore insufficient; pages must be
+  opened in a real browser (or imported as modules in a `PYTHONPATH`-unset subprocess) to
+  detect it.
+- **Permanent fix:** `dashboard/app.py` inserts the repo root into `sys.path` before any
+  `from dashboard...`/`from rdsa...` import (one deterministic bootstrap; pages inherit the
+  process-global path). `dashboard/__init__.py` added; `pyproject.toml` declares
+  `[tool.setuptools.packages.find]` (`rdsa*`, `dashboard*`) so `pip install -e .` also works.
+  Verified: `streamlit run dashboard/app.py` boots with `PYTHONPATH` unset; all six pages
+  import and render without `ModuleNotFoundError`.
+
+**Defect 2 — historical synthetic `INV001`–`INV010` shown as active matches.** 14 leads in
+`data/rdsa.sqlite3` carry `matched_inventory` with `INVxxx` IDs from pre-real-inventory runs.
+They rendered in the Overview Lead Snapshot and Matching Review as if current recommendations.
+
+- **Treatment:** `normalize_matches` loads the real inventory ID set
+  (`APT-GS-MTOWN-1BR-001`, `HSE-SS-FEDORA-2P1-001`, `KSK-BSD-INTERMODA-001`) and marks any
+  `property_id` outside it as `is_legacy=True` with note
+  "Legacy synthetic match — not an active inventory recommendation", re-typed to
+  `legacy_synthetic`. Legacy items are excluded from `get_overview`/`get_matching_groups`
+  active totals; Overview's Lead Snapshot now shows only active IDs and "No active real
+  inventory match" for legacy-only leads. Lead Detail / Matching Review show the same
+  message. **No historical `leads`/`matched_inventory` rows are rewritten and the `alerts`
+  (Telegram) table is never touched** — auditability preserved.
+- `get_inventory()` still returns only the 3 real rows; no synthetic fallback introduced.
+
+**Test additions (`tests/test_dashboard_runtime_and_legacy.py`, 94 tests total):** fresh
+`PYTHONPATH`-unset subprocess import of app + every page; real `streamlit run` boot asserting
+HTTP 200 and no traceback/ModuleNotFoundError; legacy marking/exclusion; real-only inventory;
+Overview snapshot active-label behavior; no `apify_provider`/`TelegramNotifier`/`requests`/
+`send_lead_cards` imports.
+
+**Corrected browser acceptance method:** launch from a fresh terminal with `PYTHONPATH`
+unset, open each page in a real browser, confirm visible content + no Streamlit error box
+(do not rely on HTTP 200 alone). Kill any prior Streamlit processes first — a stale server
+can serve pre-fix code and mask the fix.
 
 
 ```bash
@@ -362,6 +411,7 @@ streamlit run app_review_demo.py        # or: python -m rdsa.app_review_demo
 
 Two safe tags exist:
 ```bash
+git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix
 git checkout v0.6-operational-dashboard      # detached HEAD at merged operational dashboard
 git checkout v0.5.1-matching-hardening      # detached HEAD at matching-quality hardening
 git checkout v0.5-private-telegram-pilot   # detached HEAD at merged private Telegram pilot

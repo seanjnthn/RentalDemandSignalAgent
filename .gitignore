@@ -22,6 +22,7 @@ build/
 .codex_v05.md
 .codex_budget.md
 .codex_matching.md
+.codex_v061.md
 .codex_dashboard.md
 
 # Real/sanitized inventory must never be committed.

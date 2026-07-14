@@ -14,5 +14,9 @@ test = ["pytest>=8"]
 [project.scripts]
 rdsa = "rdsa.cli:main"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["rdsa*", "dashboard*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
