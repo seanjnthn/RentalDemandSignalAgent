@@ -216,8 +216,20 @@ persistence, a manual `rdsa pilot-scan` using one batched Apify run, and Telegra
   cards for hot/qualified leads only — **no Telegram send, no contact, no scheduler**.
 - **Tests:** `test_inventory_real.py` (validation/aliases/PII/exclusion/dup/empty),
   `test_lead_persistence.py` (dedup/manual-status-preservation/retention),
-  `test_telegram_preview.py` (eligibility + sanitization), `test_pilot_scan_mock.py`
-  (mocked one-run scan, persisted, no send). Suite: **52 passed**.
+  `test_telegram_preview.py` (eligibility + sanitization), `test_pilot_scan_mock.py`,
+  `test_inventory_mode.py` (8 safety cases). Suite: **58 passed**.
+- **Production-safety fixes (after pilot):** synthetic inventory NEVER used in live
+  mode; `RDSA_INVENTORY_MODE=real|synthetic|none` (default `real`); if real file absent
+  in live mode → empty inventory, matching disabled, warning once per run, previews show
+  `"Inventory matches: Not configured"` (no synthetic IDs leak). `pilot-scan` reports
+  CURRENT-run metrics separately from CUMULATIVE DB metrics, and CURRENT-run
+  `usageTotalUsd` separately from MONTHLY accumulated cost (with warn/stop thresholds +
+  remaining budget; `maxTotalChargeUsD` is a per-run cap; monthly may include earlier
+  canaries). Evaluation wording is honest ("False-positive rate not yet established.").
+- **Live validation (controlled regression, token never printed):** real file absent +
+  `INVENTORY_MODE=real` → 20 raw posts, 14 new leads, 6 duplicates, **0 inventory
+  matches**, warning once, "Not configured" previews, `current_run_usage_usd=0.095` vs
+  `monthly_accumulated_usd=0.222`; no synthetic IDs; no Telegram send; no contact.
 - **Live validation (controlled manual pilot, token never printed):** one batched run
   → 20 raw posts → **19 leads persisted**, 1 duplicate, 4 hot/qualified preview cards
   in spec format; monthly cost accumulator ~$0.12 (single run well under $0.10 cap).
