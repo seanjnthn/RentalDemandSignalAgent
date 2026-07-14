@@ -1,5 +1,9 @@
 import streamlit as st
-import dashboard._bootstrap  # standalone import fix (v0.6.1)
+import sys
+from pathlib import Path
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 from dashboard.theme import apply_theme
 from dashboard.common import cached_leads
 from dashboard.components import section, classification_badge, status_badge, match_tier_badge, score_bar, badge

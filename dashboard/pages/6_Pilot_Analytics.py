@@ -1,5 +1,9 @@
 import streamlit as st
-import dashboard._bootstrap  # standalone import fix (v0.6.1)
+import sys
+from pathlib import Path
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 from dashboard.theme import apply_theme
 from dashboard.components import section, chart, table
 from dashboard.charts import raw_normalized_new_funnel, classification_by_run, eligible_delivered_trend, budget_confidence_distribution, tiers_by_run, cost_trend, cumulative_cost

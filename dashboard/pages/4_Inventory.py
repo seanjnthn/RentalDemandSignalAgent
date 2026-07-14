@@ -1,5 +1,9 @@
 import streamlit as st
-import dashboard._bootstrap  # standalone import fix (v0.6.1)
+import sys
+from pathlib import Path
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 from dashboard.theme import apply_theme
 from dashboard.components import section, table
 from dashboard.formatters import money, clean, type_label
