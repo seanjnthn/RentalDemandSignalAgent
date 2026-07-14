@@ -1,4 +1,5 @@
 import streamlit as st
+import dashboard._bootstrap  # standalone import fix (v0.6.1)
 from dashboard.theme import apply_theme
 from dashboard.components import section, match_tier_badge
 from dashboard.formatters import clean, budget, period, legacy_label, money

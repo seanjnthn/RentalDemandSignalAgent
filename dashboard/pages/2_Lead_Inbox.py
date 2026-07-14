@@ -1,4 +1,5 @@
 import streamlit as st
+import dashboard._bootstrap  # standalone import fix (v0.6.1)
 from dashboard.theme import apply_theme
 from dashboard.common import cached_leads
 from dashboard.components import section, table, lead_row, export_csv

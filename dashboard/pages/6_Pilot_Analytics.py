@@ -1,4 +1,5 @@
 import streamlit as st
+import dashboard._bootstrap  # standalone import fix (v0.6.1)
 from dashboard.theme import apply_theme
 from dashboard.components import section, chart, table
 from dashboard.charts import raw_normalized_new_funnel, classification_by_run, eligible_delivered_trend, budget_confidence_distribution, tiers_by_run, cost_trend, cumulative_cost
