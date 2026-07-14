@@ -12,3 +12,10 @@ def test_preview_eligibility_and_sanitization():
     assert preview_eligible(l) and "🏠 RENTAL LEAD" in card and "Recommended action" in card
     assert "081234567890" not in card and "me@example.com" not in card and l.source_url in card
     l.lead_class="watch"; assert not preview_eligible(l)
+
+def test_ambiguous_budget_and_empty_inventory_wording():
+    l=make(); l.raw_text="cari apartemen BSD budget 900"; l.budget_min=l.budget_max=None; l.budget_confidence="low"; l.matched_inventory=[]
+    card=format_preview_card(l, matching_enabled=True)
+    assert "Budget: unclear — review original post" in card
+    assert "Inventory matches: No suitable unit found" in card
+    assert "Inventory matches: Not configured" in format_preview_card(l, matching_enabled=False)

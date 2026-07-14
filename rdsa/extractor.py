@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
+from .budget_parser import parse_budget
 
 LOCATIONS = [("Tangerang Selatan", ("tangerang selatan", "tangsel")), ("Gading Serpong", ("gading serpong",)), ("Alam Sutera", ("alam sutera",)), ("BSD", ("bsd",)), ("Serpong", ("serpong",)), ("Tangerang", ("tangerang",))]
 
@@ -14,13 +15,8 @@ class Lead:
     lead_class: str = "irrelevant"; lead_score: int = 0; score_breakdown: list = field(default_factory=list)
     score_version: str = "v1.0"; matched_inventory: list = field(default_factory=list); status: str = "new"; dedup_hash: str = ""
     alerted_at: str|None = None
+    budget_confidence: str = "low"; budget_note: str = ""; budget_raw: str = ""
     def to_dict(self): return asdict(self)
-
-def _amount(number, suffix=""):
-    n = float(number.replace(".", "").replace(",", "."))
-    if suffix.lower() in ("jt", "juta", "m"): n *= 1_000_000
-    elif suffix.lower() in ("rb", "ribu", "k"): n *= 1_000
-    return int(n)
 
 def extract(post, now=None):
     text = post.get("text", ""); low = text.lower()
@@ -36,24 +32,11 @@ def extract(post, now=None):
     bedroom = None
     m = re.search(r"\b(\d+)\s*(?:br|bedroom|kamar(?: tidur)?)\b", low)
     if m: bedroom = int(m.group(1))
-    period = "unknown"
-    if re.search(r"(?:/|per\s*)(bln|bulan|month)|monthly", low): period = "month"
-    elif re.search(r"(?:/|per\s*)tahun|year|annual", low): period = "year"
-    elif re.search(r"(?:/|per\s*)quarter", low): period = "quarter"
-    elif re.search(r"(?:/|per\s*)6\s*bulan|half.year", low): period = "half_year"
-    amounts = []
-    for m in re.finditer(r"(?:rp\s*)?(\d+(?:[.,]\d+)?)\s*(jt|juta|m|rb|ribu|k)?", low):
-        raw = m.group(1); suffix = m.group(2) or ""
-        following=low[m.end():m.end()+12]
-        if suffix or ("budget" in low[m.start()-15:m.start()+30] and not re.match(r"\s*(?:br|bedroom|kamar|tahun|year|bulan|month)",following)) or "million" in low[m.start():m.end()+15]: amounts.append(_amount(raw, suffix if suffix else ""))
-    if "million" in low and amounts and amounts[0] < 1000: amounts[0] *= 1_000_000
-    # Explicit plain-million English budgets (e.g. 6 million/month).
-    if not amounts:
-        for m in re.finditer(r"(\d+(?:\.\d+)?)\s*million", low): amounts.append(int(float(m.group(1))*1_000_000))
-    bmin = bmax = None
-    if amounts:
-        bmin, bmax = (min(amounts), max(amounts))
-        if len(amounts) == 1: bmin = None
+    budget = parse_budget(text)
+    period = budget.period
+    bmin = budget.monthly_min if period == "year" else budget.min_amount
+    bmax = budget.monthly_max if period == "year" else budget.max_amount
+    if budget.confidence not in ("high", "medium"): bmin = bmax = None
     dur = None
     m = re.search(r"(?:sewa|rent(?:al)?)\s*(\d+\s*(?:tahun|year|months?|bulan))", low)
     if m: dur = m.group(1)
@@ -64,4 +47,4 @@ def extract(post, now=None):
     elif re.search(r"bulan depan|next month", low): move = "next month"
     else: move = None
     fetched = (now or datetime.now(timezone.utc)).isoformat()
-    return Lead(str(post["id"]), post.get("permalink", ""), post.get("username", ""), post.get("timestamp", ""), fetched, text, intent, location, confidence, ptype, bedroom, bmin, bmax, "IDR", period, move, dur, req)
+    return Lead(str(post["id"]), post.get("permalink", ""), post.get("username", ""), post.get("timestamp", ""), fetched, text, intent, location, confidence, ptype, bedroom, bmin, bmax, budget.currency, period, move, dur, req, budget_confidence=budget.confidence, budget_note=budget.note, budget_raw=budget.raw_text)

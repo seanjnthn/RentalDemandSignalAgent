@@ -28,3 +28,5 @@ data/inventory_real.csv
 data/inventory_adapted.csv
 data/*dryrun*.sqlite3
 data/apify_usage.json
+
+.pytest-temp*/

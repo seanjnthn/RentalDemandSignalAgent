@@ -36,3 +36,5 @@ APIFY_WARN_USD = float(os.getenv("APIFY_WARN_USD", "3.75"))
 APIFY_STOP_USD = float(os.getenv("APIFY_STOP_USD", "4.25"))
 APIFY_QUERIES = ["cari apartemen BSD", "butuh apartemen BSD", "cari apartemen Alam Sutera", "cari rumah sewa Tangerang"]
 APIFY_USAGE_PATH = os.getenv("APIFY_USAGE_PATH", str(ROOT / "data" / "apify_usage.json"))
+BUDGET_PLAUSIBLE_MIN = int(os.getenv("RDSA_BUDGET_PLAUSIBLE_MIN", "500000"))
+BUDGET_PLAUSIBLE_MAX = int(os.getenv("RDSA_BUDGET_PLAUSIBLE_MAX", "500000000"))

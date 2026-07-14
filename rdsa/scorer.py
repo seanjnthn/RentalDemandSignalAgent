@@ -1,6 +1,7 @@
 import re
 from datetime import datetime, timezone
 from .scoring_config import RELATIVE_BUDGET_SIGNALS, SCORE_VERSION, SPAM_SIGNALS
+from . import config
 
 def score(lead, now=None):
     t=lead.raw_text.lower(); b=[]
@@ -9,7 +10,9 @@ def score(lead, now=None):
     add("R1",25 if lead.rental_intent=="seeking" and re.search(r"butuh|cari|looking for|needed|need|sewa",t) else 10 if lead.rental_intent=="seeking" else 0,"explicit seeking intent")
     add("R2",20 if lead.desired_location in ("BSD","Alam Sutera","Gading Serpong","Tangerang Selatan") else 10 if lead.desired_location in ("Serpong","Tangerang") else 0,"target location")
     relative_budget = any(signal in t for signal in RELATIVE_BUDGET_SIGNALS)
-    add("R3",7 if relative_budget else 15 if lead.budget_max is not None else 0,"budget stated")
+    budget_valid = (getattr(lead, "budget_confidence", "low") in ("high", "medium") and
+                    lead.budget_max is not None and config.BUDGET_PLAUSIBLE_MIN <= lead.budget_max <= config.BUDGET_PLAUSIBLE_MAX)
+    add("R3",7 if relative_budget else 15 if budget_valid else 0,"budget stated")
     add("R4",10 if lead.property_type!="unknown" else 5 if "tempat tinggal" in t else 0,"property type")
     add("R5",8 if lead.bedrooms is not None else 0,"bedrooms specified")
     add("R6",12 if re.search(r"secepatnya|asap|bulan ini|akhir bulan",t) else 6 if re.search(r"bulan depan|next month",t) else 2 if re.search(r"tahun depan|someday|move[- ]?in\s+flexible|flexible\s+move[- ]?in",t) else 0,"move-in urgency")

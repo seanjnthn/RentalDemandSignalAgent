@@ -30,9 +30,11 @@ def format_preview_card(lead, matching_enabled=True):
     matches=_get(lead,"matched_inventory",[]) or []
     if not matching_enabled: matches_block="Inventory matches: Not configured"
     else:
-        lines="\n".join(f"{i}. {_safe(m.get('inventory_id','unknown'))} — {m.get('score',0)}" for i,m in enumerate(matches[:3],1)) or "1. none"
-        matches_block=f"Inventory matches:\n{lines}"
-    budget=_get(lead,"budget_max") or _get(lead,"budget_min"); budget=f"{budget:,} IDR" if isinstance(budget,int) else "not stated"
+        lines="\n".join(f"{i}. {_safe(m.get('inventory_id','unknown'))} — {m.get('score',0)}" for i,m in enumerate(matches[:3],1)) or "No suitable unit found"
+        matches_block="Inventory matches: No suitable unit found" if not matches else f"Inventory matches:\n{lines}"
+    budget=_get(lead,"budget_max") or _get(lead,"budget_min")
+    budget_confidence=_get(lead,"budget_confidence","low")
+    budget=f"{budget:,} IDR" if budget_confidence in ("high","medium") and isinstance(budget,int) else "unclear — review original post"
     ptype=_get(lead,"property_type") or "unknown"; beds=_get(lead,"bedrooms"); property_text=f"{ptype} {beds} bedroom" if beds else str(ptype)
     source=_get(lead,"source_url",""); source=_safe(source, "") if re.match(r"^https?://",str(source)) else ""
     return (f"🏠 RENTAL LEAD — {_get(lead,'lead_score',0)}/100\n\nPosted: {_age(_get(lead,'post_timestamp'))}\nArea: {_safe(_get(lead,'desired_location'),'unknown')}\n"

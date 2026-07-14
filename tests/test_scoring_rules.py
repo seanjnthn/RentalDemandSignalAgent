@@ -17,6 +17,9 @@ def test_relative_budget_is_seven_and_numeric_budget_is_fifteen():
     assert next(x["points"] for x in _score("Looking for apartment in BSD, budget under 10 million/month").score_breakdown if x["rule"] == "R3") == 7
     assert next(x["points"] for x in _score("Looking for apartment in BSD, budget 8jt/bulan").score_breakdown if x["rule"] == "R3") == 15
 
+def test_ambiguous_budget_gets_no_numeric_budget_points():
+    assert not any(x["rule"] == "R3" for x in _score("Looking for apartment in BSD, budget 900").score_breakdown)
+
 
 def test_score_bands_follow_spec_thresholds():
     # Bind to config so the test tracks the rubric, never a stale hardcoded band.

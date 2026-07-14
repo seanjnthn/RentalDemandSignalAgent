@@ -265,6 +265,15 @@ credentials.
 uses honest reviewed/rejected/unreviewed counts; with no manual review it prints
 exactly `False-positive rate not yet established.`
 
+The v0.5 pre-merge budget-parser fix adds confidence-aware Indonesian budget
+normalization, yearly-to-monthly matching conversion, plausible-range scoring
+guards, and unknown-budget matching behavior. Telegram canary evidence and live
+pilot evidence remain preview/delivery evidence only; this fix does not resend
+or mutate delivered alert history. Current safety defaults are `Live=false`,
+`Send=false`, and no cron/scheduler. Configured inventory with no match is shown
+as `Inventory matches: No suitable unit found`; absent or disabled inventory is
+shown as `Inventory matches: Not configured`.
+
 ## 9. Next milestone (in progress)
 
 
