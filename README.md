@@ -109,6 +109,19 @@ Pilot results separate `current` scan metrics from cumulative database metrics.
 Cost reporting separates the current Actor run's `usageTotalUsd` from monthly
 accumulated usage, warn/stop thresholds, and remaining budget.
 
+## Private Telegram pilot
+
+Telegram delivery is disabled by default. Configure `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID` in the git-ignored `.env`, then set
+`RDSA_TELEGRAM_SEND_ENABLED=true` and `TELEGRAM_ALLOWED_CHAT_ID` to the one
+operator chat permitted to receive messages. Check the control with
+`rdsa telegram-test --confirm-send`; it makes no Apify call and includes no lead
+data. `rdsa pilot-send --confirm-send` first requires a valid operator-supplied
+`data/inventory_real.csv`, then performs one bounded read-only Apify run and
+sends at most three hot/qualified preview cards. Alerts are deduplicated by
+`post_id`; failed sends do not create alert records. The token is redacted from
+delivery errors, and all contact remains manual.
+
 ## Operational Pilot
 
 Run a manual, preview-only live scan with `rdsa pilot-scan`. It requires

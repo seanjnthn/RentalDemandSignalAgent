@@ -248,6 +248,20 @@ matching and preview cards show `Inventory matches: Not configured`; synthetic I
 cannot leak into live previews. Current-scan metrics are separate from cumulative
 database metrics, and cost output separates current Actor `usageTotalUsd` from
 monthly accumulated usage, warn/stop thresholds, and remaining budget. Evaluation
+
+### 8.7. v0.5 private Telegram pilot (built; live test pending operator)
+
+The private delivery pilot is built but has not been live-tested by Codex. Real
+inventory validation now reports sanitized counts, rejection reasons, area counts,
+and price ranges; absent inventory or hard validation errors stop `pilot-send`
+before any Apify call. `telegram-test` and `pilot-send` both require
+`--confirm-send`, `RDSA_TELEGRAM_SEND_ENABLED=true`, and the configured
+`TELEGRAM_ALLOWED_CHAT_ID`. Delivery is limited to three eligible cards per run,
+deduplicated through the SQLite `alerts` table (including Telegram `message_id`),
+and failures are redacted and do not mark leads sent. There is no scheduler,
+auto-contact, DM, publish, or dashboard behavior. Hermes must run the live test
+separately after supplying sanitized `data/inventory_real.csv` and operator-only
+credentials.
 uses honest reviewed/rejected/unreviewed counts; with no manual review it prints
 exactly `False-positive rate not yet established.`
 

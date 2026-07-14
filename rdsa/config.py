@@ -25,6 +25,8 @@ THREADS_REDIRECT_URI = os.getenv("THREADS_REDIRECT_URI", "")
 THREADS_USER_TOKEN = os.getenv("THREADS_USER_TOKEN", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_SEND_ENABLED = os.getenv("RDSA_TELEGRAM_SEND_ENABLED", "false").strip().lower() == "true"
+TELEGRAM_ALLOWED_CHAT_ID = os.getenv("TELEGRAM_ALLOWED_CHAT_ID", TELEGRAM_CHAT_ID).strip()
 APIFY_API_TOKEN = os.getenv("APIFY_API_TOKEN", "")
 APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "automation-lab/threads-scraper")
 APIFY_LIVE_ENABLED = os.getenv("APIFY_LIVE_ENABLED", "false")

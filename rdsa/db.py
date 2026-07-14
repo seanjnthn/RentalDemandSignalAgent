@@ -9,6 +9,8 @@ def connect(path):
     cols={r[1] for r in c.execute('PRAGMA table_info(leads)')}
     for name, definition in (("provider", "TEXT NOT NULL DEFAULT 'apify'"),("first_seen", "TEXT"),("last_seen", "TEXT"),("notes", "TEXT")):
         if name not in cols: c.execute(f'ALTER TABLE leads ADD COLUMN {name} {definition}')
+    alert_cols={r[1] for r in c.execute('PRAGMA table_info(alerts)')}
+    if 'message_id' not in alert_cols: c.execute('ALTER TABLE alerts ADD COLUMN message_id TEXT')
     c.commit(); return c
 def existing(c): return [dict(r) for r in c.execute('SELECT post_id,author_username,dedup_hash,raw_text FROM leads')]
 def upsert_lead(c,lead,provider="apify"):
@@ -27,7 +29,10 @@ def upsert_lead(c,lead,provider="apify"):
     if cur.rowcount == 0:
         c.execute('UPDATE leads SET last_seen=? WHERE post_id=?', (now, d['post_id']))
     c.commit();return cur.rowcount
-def mark_alert(c,post_id): cur=c.execute('INSERT OR IGNORE INTO alerts(post_id,sent_at) VALUES(?,?)',(post_id,datetime.now(timezone.utc).isoformat()));c.commit();return cur.rowcount
+def already_sent(c, post_id):
+    return c.execute("SELECT 1 FROM alerts WHERE post_id=? AND channel='telegram' LIMIT 1", (post_id,)).fetchone() is not None
+def mark_alert(c,post_id,message_id=None):
+    cur=c.execute('INSERT OR IGNORE INTO alerts(post_id,sent_at,message_id) VALUES(?,?,?)',(post_id,datetime.now(timezone.utc).isoformat(),message_id));c.commit();return cur.rowcount
 def set_status(c,post_id,new):
     row=c.execute('SELECT status FROM leads WHERE post_id=?',(post_id,)).fetchone()
     if not row: raise ValueError('unknown post')
