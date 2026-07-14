@@ -1,8 +1,12 @@
 import streamlit as st
-from rdsa.dashboard_repository import get_matching_groups
+from rdsa.dashboard_repository import get_leads, get_matching_groups
 
 st.title("Matching Review")
 groups = get_matching_groups()
+legacy_only = [lead for lead in get_leads({}) if lead["matches"] and not lead["match_types"]]
+if legacy_only:
+    st.info("No active real inventory match")
+    st.caption(f"{len(legacy_only)} lead(s) contain only historical matches.")
 styles = {"exact_match": "🟢", "nearby_alternative": "🟠", "tentative_match": "🟡", "no_match": "🔴"}
 for kind in ("exact_match", "nearby_alternative", "tentative_match", "no_match"):
     st.subheader(f"{styles[kind]} {kind.replace('_', ' ').title()} ({len(groups[kind])})")

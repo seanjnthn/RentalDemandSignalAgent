@@ -311,6 +311,14 @@ no cron/scheduler. Suite: **70 passed**.
 
 ### 8.9. v0.6 operational lead dashboard (merged)
 
+The v0.6.1 runtime/data fix adds a deterministic repo-root import bootstrap to
+`dashboard/app.py`, so operators no longer need to set `PYTHONPATH` before
+running `streamlit run dashboard/app.py`; `dashboard` and `rdsa` are also
+declared as installable packages. Historical `INVxxx` synthetic matches remain
+stored for auditability and are labeled as legacy, but are excluded from active
+exact/nearby/tentative/no-match metrics and groups. Legacy-only leads display
+“No active real inventory match”; the three real inventory IDs remain active.
+
 Local, read-only-by-default Streamlit review interface. No Apify/Threads/Telegram
 calls, no cron, no author contact, no `.env` changes, no synthetic inventory.
 

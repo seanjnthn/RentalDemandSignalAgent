@@ -12,6 +12,8 @@ if post_id:
     c1, c2, c3 = st.columns(3); c1.metric("Score", lead["lead_score"]); c2.metric("Classification", lead["lead_class"]); c3.metric("Status", lead["status"])
     st.json({"area": lead["desired_location"], "property_type": lead.get("property_type"), "bedrooms": lead.get("bedrooms"), "budget_min": lead.get("budget_min"), "budget_max": lead.get("budget_max"), "currency": lead.get("budget_currency"), "period": lead.get("budget_period"), "confidence": lead.get("budget_confidence"), "move_in": lead.get("move_in_date"), "duration": lead.get("rental_duration"), "requirements": lead.get("special_requirements")})
     st.subheader("Score breakdown"); st.json(lead.get("score_breakdown", []))
+    if lead.get("matches") and not lead.get("match_types"):
+        st.info("No active real inventory match")
     st.subheader("Structured matches"); st.json(lead.get("matches", []))
     st.subheader("Telegram delivery metadata"); st.json(lead.get("alerts", []))
     st.write({"first_seen": lead.get("first_seen"), "last_seen": lead.get("last_seen"), "reviewed_at": lead.get("reviewed_at")})

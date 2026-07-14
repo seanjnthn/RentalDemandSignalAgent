@@ -11,6 +11,7 @@ import re
 import sqlite3
 from collections import Counter
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,14 @@ MATCH_TYPES = ("exact_match", "nearby_alternative", "tentative_match", "no_match
 CLASSIFICATIONS = ("hot_lead", "qualified_lead", "watch", "agent_broker", "irrelevant", "spam")
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "rdsa.sqlite3"
 DEFAULT_INVENTORY = Path(__file__).resolve().parent.parent / "data" / "inventory_real.csv"
+LEGACY_NOTE = "Legacy synthetic match — not an active inventory recommendation"
+
+
+@lru_cache(maxsize=1)
+def _real_inventory_ids() -> frozenset[str]:
+    """Return the current real inventory IDs once per process."""
+    rows, _ = load_real_inventory(DEFAULT_INVENTORY)
+    return frozenset(str(row["inventory_id"]) for row in rows if row.get("inventory_id"))
 
 
 def _conn(path: str | Path = DEFAULT_DB) -> sqlite3.Connection:
@@ -51,6 +60,7 @@ def normalize_matches(value: Any, lead_area: str | None = None) -> list[dict[str
     raw = _json(value, [])
     if not isinstance(raw, list):
         return []
+    real_ids = _real_inventory_ids()
     result = []
     for item in raw:
         if not isinstance(item, dict):
@@ -65,12 +75,16 @@ def normalize_matches(value: Any, lead_area: str | None = None) -> list[dict[str
         warnings = item.get("warnings", []) or []
         if not isinstance(warnings, list):
             warnings = [str(warnings)]
+        is_legacy = str(property_id) not in real_ids
         match_type = item.get("match_type")
-        if match_type not in MATCH_TYPES:
+        if is_legacy:
+            match_type = "legacy_synthetic"
+        elif match_type not in MATCH_TYPES:
             inventory_area = item.get("location")
             match_type = "nearby_alternative" if legacy and lead_area and inventory_area and canonical_area(lead_area) != canonical_area(inventory_area) else "exact_match"
         result.append({
             "property_id": str(property_id), "match_type": match_type,
+            "is_legacy": is_legacy, "legacy_note": LEGACY_NOTE if is_legacy else None,
             "score": item.get("score", 0), "reasons": reasons, "warnings": warnings,
             "title": item.get("title"), "location": item.get("location"),
             "property_type": item.get("property_type"), "bedrooms": item.get("bedrooms"),
@@ -87,7 +101,8 @@ def _decorate(row: sqlite3.Row) -> dict[str, Any]:
     lead["score_breakdown"] = _json(lead.get("score_breakdown"), [])
     lead["special_requirements"] = _json(lead.get("special_requirements"), lead.get("special_requirements") or "")
     lead["matches"] = normalize_matches(lead.get("matched_inventory"), lead.get("desired_location"))
-    lead["match_types"] = sorted({m["match_type"] for m in lead["matches"]}) or ["no_match"]
+    active_types = {m["match_type"] for m in lead["matches"] if not m["is_legacy"] and m["match_type"] in MATCH_TYPES}
+    lead["match_types"] = sorted(active_types) if active_types else ([] if lead["matches"] else ["no_match"])
     lead["matched_property_ids"] = [m["property_id"] for m in lead["matches"]]
     return lead
 
@@ -125,7 +140,7 @@ def get_overview(filters: dict[str, Any] | None = None, db_path: str | Path = DE
     leads = get_leads(filters, db_path)
     counts = Counter(x.get("lead_class") for x in leads)
     statuses = Counter(x.get("status") for x in leads)
-    matches = Counter(m["match_type"] for x in leads for m in x["matches"])
+    matches = Counter(m["match_type"] for x in leads for m in x["matches"] if not m["is_legacy"] and m["match_type"] in MATCH_TYPES)
     with _conn(db_path) as c:
         delivered = c.execute("SELECT COUNT(*) FROM alerts WHERE channel='telegram'").fetchone()[0]
     usage_path = Path(db_path).parent / "apify_usage.json"
@@ -162,7 +177,8 @@ def get_matching_groups(db_path: str | Path = DEFAULT_DB) -> dict[str, list[dict
     groups = {key: [] for key in MATCH_TYPES}
     for lead in get_leads({}, db_path):
         for match in lead["matches"]:
-            groups[match["match_type"]].append({"lead": lead, "match": match})
+            if not match["is_legacy"] and match["match_type"] in MATCH_TYPES:
+                groups[match["match_type"]].append({"lead": lead, "match": match})
     return groups
 
 
