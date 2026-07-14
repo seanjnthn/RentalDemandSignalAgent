@@ -407,10 +407,50 @@ python -m rdsa.cli status 4001 reviewed
 streamlit run app_review_demo.py        # or: python -m rdsa.app_review_demo
 ```
 
+### 8.10. v0.6.2 dashboard UX & visual design refresh (merged)
+
+UI/UX-only milestone. The 6-page Streamlit dashboard was redesigned into a polished
+dark real-estate intelligence surface. **No scoring, matching, budget parsing, delivery,
+Apify, Telegram, or database-source logic was changed.**
+
+- **UX objectives:** clear hierarchy, readable typography, consistent spacing, no raw
+  default-Streamlit look, no excessive horizontal scroll; accessible dark/light contrast.
+- **Design system:** `dashboard/theme.py` single CSS source (dark navy/charcoal; teal =
+  confirmed/healthy, amber = tentative/confirm-required, red = error/serious-warning,
+  muted gray = legacy/historical); consistent radius/borders/shadows.
+- **Pages/components added:** `dashboard/theme.py`, `dashboard/components.py` (KPI card,
+  badges, score bar, area chip, table wrapper w/ empty+loading states), `dashboard/formatters.py`
+  (sanitize, currency/period, labels, legacy detection), `dashboard/charts.py` (Altair chart
+  builders). All six pages rebuilt: branded Overview (header + KPI strip + funnel/distribution/
+  cost charts + recent high-priority leads), CRM Lead Inbox (search, quick chips, filters, sort,
+  preview, sanitized CSV export), structured Lead Detail (summary / score explanation / source /
+  match cards / workflow+audit, read-only Telegram history), Inventory property cards + table
+  (real records only), Matching Review tabs (Exact / Nearby / Tentative / No match / Legacy
+  historical, side-by-side comparison), Pilot Analytics (per-run + cumulative charts, no
+  false-positive rate claimed).
+- **Altair decision:** Plotly is **not installed and cannot be installed offline** (no network,
+  no local wheel/cache). Charts use Streamlit-bundled **Altair** (`st.altair_chart`) — fully
+  interactive (hover/zoom). `plotly` was intentionally kept out of `pyproject.toml`.
+- **Standalone page import fix (this release):** the v0.6.1 `sys.path` bootstrap lived only in
+  `app.py`; deep-linking a page URL (`/Overview`) ran the page module before that fix was in
+  scope and raised `ModuleNotFoundError: No module named 'dashboard'`. Added `dashboard/_bootstrap.py`
+  and import it first in all six page files, so every page loads standalone with `PYTHONPATH` unset.
+  Verified by direct browser deep-link to all six page URLs (HTTP 200, no traceback).
+- **Browser acceptance (fresh server, PYTHONPATH unset):** all six pages render without
+  traceback at 1366×768 and 1920×1080; KPIs/charts/tables correct; exact/nearby/tentative/legacy
+  visually distinct; no raw `INVxxx` shown as active matches; status-update workflow still requires
+  confirmation and still creates an audit entry (verified via controlled update + restore); Telegram
+  history and source text unchanged by the update.
+- **Security boundaries:** no Apify execution path, no Telegram send path, no scan/send buttons,
+  no token / `.env` / private chat-ID shown, no synthetic inventory fallback; repository writes
+  remain limited to lead status / notes / reviewed_at / audit. The v0.6.1 import fix is intact
+  (and now also per-page). Altair introduces no remote-data/network dependency.
+
 ## 11. Rollback
 
 Two safe tags exist:
 ```bash
+git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix
 git checkout v0.6-operational-dashboard      # detached HEAD at merged operational dashboard
 git checkout v0.5.1-matching-hardening      # detached HEAD at matching-quality hardening
