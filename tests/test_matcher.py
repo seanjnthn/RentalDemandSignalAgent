@@ -21,3 +21,7 @@ def test_qualified_lead_matches_inventory_on_core_fields():
 def test_lead_with_no_viable_inventory_returns_no_matches():
     lead = _scored("Cari apartemen 3BR di BSD, budget 2jt/bulan")
     assert match(lead, load_inventory("data/inventory.csv")) == []
+
+def test_low_confidence_budget_does_not_reject_inventory():
+    lead = _scored("Cari apartemen 2BR di BSD, budget 900")
+    assert match(lead, load_inventory("data/inventory.csv"))

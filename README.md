@@ -105,9 +105,31 @@ lead discovery continues with matching disabled and preview cards show exactly
 `Inventory matches: Not configured`. `synthetic` is for offline fixture scans;
 `none` explicitly disables matching without a warning.
 
+Budget parsing is centralized in `rdsa/budget_parser.py`. It handles
+Indonesian magnitude suffixes, localized decimals, ranges, and yearly-to-monthly
+normalization. Only medium/high-confidence amounts in the configurable
+`RDSA_BUDGET_PLAUSIBLE_MIN`..`MAX` range score as stated budgets or constrain
+matching; ambiguous bare numbers remain unknown. Preview cards show
+`Budget: unclear — review original post`, `Inventory matches: No suitable unit
+found` for an empty configured inventory result, and `Inventory matches: Not
+configured` when matching is disabled.
+
 Pilot results separate `current` scan metrics from cumulative database metrics.
 Cost reporting separates the current Actor run's `usageTotalUsd` from monthly
 accumulated usage, warn/stop thresholds, and remaining budget.
+
+## Private Telegram pilot
+
+Telegram delivery is disabled by default. Configure `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID` in the git-ignored `.env`, then set
+`RDSA_TELEGRAM_SEND_ENABLED=true` and `TELEGRAM_ALLOWED_CHAT_ID` to the one
+operator chat permitted to receive messages. Check the control with
+`rdsa telegram-test --confirm-send`; it makes no Apify call and includes no lead
+data. `rdsa pilot-send --confirm-send` first requires a valid operator-supplied
+`data/inventory_real.csv`, then performs one bounded read-only Apify run and
+sends at most three hot/qualified preview cards. Alerts are deduplicated by
+`post_id`; failed sends do not create alert records. The token is redacted from
+delivery errors, and all contact remains manual.
 
 ## Operational Pilot
 

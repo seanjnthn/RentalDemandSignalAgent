@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .pytest-tmp/
+.pytest-tmp-*/
 .pytest-tmp-run/
 .pytest-tmp-new/
 .pytest-tmp-final/
@@ -18,6 +19,8 @@ build/
 .codex_apify.md
 .codex_pilot.md
 .codex_safety.md
+.codex_v05.md
+.codex_budget.md
 
 # Real/sanitized inventory must never be committed.
 # (data/inventory.csv is the committed SAMPLE used by tests — do NOT overwrite it.)
@@ -25,3 +28,5 @@ data/inventory_real.csv
 data/inventory_adapted.csv
 data/*dryrun*.sqlite3
 data/apify_usage.json
+
+.pytest-temp*/
