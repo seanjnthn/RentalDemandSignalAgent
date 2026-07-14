@@ -323,9 +323,11 @@ streamlit run app_review_demo.py        # or: python -m rdsa.app_review_demo
 
 Two safe tags exist:
 ```bash
-git checkout v0.3-apify-provider       # detached HEAD at merged Apify live provider
-git checkout v0.2-app-review-prep      # detached HEAD at App Review prep (documents + demo build)
-git checkout v0.1-synthetic-mvp        # detached HEAD at the frozen core MVP
+git checkout v0.5-private-telegram-pilot   # detached HEAD at merged private Telegram pilot
+git checkout v0.4-operational-pilot       # detached HEAD at operational pilot (persistence, preview)
+git checkout v0.3-apify-provider          # detached HEAD at merged Apify live provider
+git checkout v0.2-app-review-prep         # detached HEAD at App Review prep (documents + demo build)
+git checkout v0.1-synthetic-mvp           # detached HEAD at the frozen core MVP
 # destructive reset of a branch:
 git reset --hard v0.3-apify-provider
 ```
