@@ -309,7 +309,7 @@ no cron/scheduler. Suite: **70 passed**.
 - `matched_inventory` persists the actual structured match list and normalizes legacy `[null]`/`[None]` values to `[]` on read/write. Historical `alerts` rows are not rewritten.
 - Current-scan metrics report extracted target-area leads, exact/nearby/tentative/no-match counts, and unknown-location leads. Pilot-send no longer prints cards before the single render/send path.
 
-### 8.9. v0.6 operational lead dashboard (built; not merged)
+### 8.9. v0.6 operational lead dashboard (merged)
 
 Local, read-only-by-default Streamlit review interface. No Apify/Threads/Telegram
 calls, no cron, no author contact, no `.env` changes, no synthetic inventory.
@@ -325,11 +325,22 @@ calls, no cron, no author contact, no `.env` changes, no synthetic inventory.
 - **Security:** token/chat-id/Apify never rendered; phone/email sanitized; no
   `send_lead_cards`/`TelegramNotifier`/`apify_provider`/`requests`/synthetic paths in
   dashboard code (static-checked). Alert history never modified.
-- **Verification:** 86 tests pass; dashboard serves HTTP 200 headless; all 7 scripts
-  import; status/notes update + audit insertion confirmed on the real pilot DB; no
-  secret exposure; no Apify/Telegram call.
+- **Acceptance review:** all six pages passed; controlled status→reviewed→restore
+  update created an audit entry and left Telegram history unchanged. Two blocking
+  cost-parser defects found and fixed:
+  1. Overview `apify_cost` always $0.000 (read a non-existent `runs` list); now reads
+     `actual_usd`/`estimated_usd` → cumulative ~$0.74.
+  2. Pilot Analytics cost-per-run showed $4.75 (the stop threshold) via a greedy regex;
+     now anchored to `usageTotalUsd` → runs #1–#4 parse $0.095.
+  `PILOT_LOG.md` Runs #3/#4 normalized to the standard metric labels using only
+  recorded values (no invented/threshold-derived figures).
+- **Read/write boundaries:** dashboard reads leads/inventory/alerts/usage; writes only
+  status/notes/reviewed_at + audit. No production scoring, matching, or delivery logic
+  is invoked or modified by the dashboard.
+- **Safety defaults:** `APIFY_LIVE_ENABLED=false`, `RDSA_TELEGRAM_SEND_ENABLED=false`, no
+  cron, no recurring send, no Apify/Telegram buttons.
 
-## 10. Run commands
+
 
 ```bash
 cd ~/rental-demand-signal-agent
@@ -351,6 +362,8 @@ streamlit run app_review_demo.py        # or: python -m rdsa.app_review_demo
 
 Two safe tags exist:
 ```bash
+git checkout v0.6-operational-dashboard      # detached HEAD at merged operational dashboard
+git checkout v0.5.1-matching-hardening      # detached HEAD at matching-quality hardening
 git checkout v0.5-private-telegram-pilot   # detached HEAD at merged private Telegram pilot
 git checkout v0.4-operational-pilot       # detached HEAD at operational pilot (persistence, preview)
 git checkout v0.3-apify-provider          # detached HEAD at merged Apify live provider
