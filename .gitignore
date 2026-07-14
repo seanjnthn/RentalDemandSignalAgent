@@ -20,6 +20,7 @@ build/
 .codex_pilot.md
 .codex_safety.md
 .codex_v05.md
+.codex_budget.md
 
 # Real/sanitized inventory must never be committed.
 # (data/inventory.csv is the committed SAMPLE used by tests — do NOT overwrite it.)
