@@ -98,6 +98,17 @@ Preview with `rdsa scan --source apify --dry-run`. The monthly guard stores esti
 
 Status transitions are `new -> reviewed -> contacted -> responded -> viewing_scheduled -> converted`, with `rejected` available from any active state. See `docs/RUNBOOK.md` for operating notes.
 
+Inventory matching is controlled by `RDSA_INVENTORY_MODE=real|synthetic|none`.
+The default is `real`: live/Apify scans read only `RDSA_INVENTORY_REAL_CSV` and
+never fall back to the committed sample. If real inventory is absent or empty,
+lead discovery continues with matching disabled and preview cards show exactly
+`Inventory matches: Not configured`. `synthetic` is for offline fixture scans;
+`none` explicitly disables matching without a warning.
+
+Pilot results separate `current` scan metrics from cumulative database metrics.
+Cost reporting separates the current Actor run's `usageTotalUsd` from monthly
+accumulated usage, warn/stop thresholds, and remaining budget.
+
 ## Operational Pilot
 
 Run a manual, preview-only live scan with `rdsa pilot-scan`. It requires
@@ -105,7 +116,8 @@ Run a manual, preview-only live scan with `rdsa pilot-scan`. It requires
 Actor run, persists leads in SQLite, and prints Telegram-shaped cards without
 sending Telegram messages. Place the operator-supplied, sanitized real source
 at `data/inventory_real.csv`; it is git-ignored and never fabricated by this
-project. Until it exists, pilot matching uses the committed synthetic sample.
+project. Until it exists, pilot matching is disabled and previews show
+`Inventory matches: Not configured`.
 
 Rejected/duplicate/irrelevant leads are eligible for cleanup after
 `LEAD_RETENTION_DAYS` (default 90). Live enablement and any future scheduling

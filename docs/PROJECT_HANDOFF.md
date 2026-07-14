@@ -203,7 +203,8 @@ persistence, a manual `rdsa pilot-scan` using one batched Apify run, and Telegra
   duplicate `property_id`, excludes non-`available` rows, normalizes area aliases
   (BSD/BSD City, Alam Sutera/Alsut, Gading Serpong/GS, Tangerang Selatan/Tangsel),
   and rejects PII-like rows. `data/inventory_real.csv` is git-ignored and must be
-  supplied by the operator; if absent, matching falls back to the synthetic sample.
+  supplied by the operator; if absent, live matching is disabled and previews show
+  `Inventory matches: Not configured`.
 - **Persistence** (`rdsa/db.py`): `leads` gains `provider`, `first_seen`, `last_seen`;
   `INSERT OR IGNORE` preserves manual `status`/`notes` on re-scan; near-duplicate text
   → status `duplicate`; status transitions include `negotiating`/`duplicate`; 
@@ -228,6 +229,15 @@ persistence, a manual `rdsa pilot-scan` using one batched Apify run, and Telegra
 **Operator next steps (not built, by instruction):** place sanitized
 `data/inventory_real.csv`; enable live; *separately* decide on scheduling (cron) and
 Telegram sending. Do not auto-contact leads.
+
+Operational pilot safety fix: `RDSA_INVENTORY_MODE=real` is the default, and live
+scans never use synthetic inventory. Missing or empty real inventory disables
+matching and preview cards show `Inventory matches: Not configured`; synthetic IDs
+cannot leak into live previews. Current-scan metrics are separate from cumulative
+database metrics, and cost output separates current Actor `usageTotalUsd` from
+monthly accumulated usage, warn/stop thresholds, and remaining budget. Evaluation
+uses honest reviewed/rejected/unreviewed counts; with no manual review it prints
+exactly `False-positive rate not yet established.`
 
 ## 9. Next milestone (in progress)
 

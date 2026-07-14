@@ -20,11 +20,15 @@ def _safe(value, fallback="not stated"):
     value=re.sub(r"(?:\+62|0\d{8,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", "[redacted]", value)
     return value[:120]
 
-def format_preview_card(lead):
+def format_preview_card(lead, matching_enabled=True):
     breakdown=_get(lead,"score_breakdown",[]) or []
     reasons=[_safe(x.get("reason", "")) for x in breakdown[:3] if isinstance(x,dict) and x.get("reason")]
     matches=_get(lead,"matched_inventory",[]) or []
-    match_lines="\n".join(f"{i}. {_safe(m.get('inventory_id','unknown'))} — {m.get('score',0)}" for i,m in enumerate(matches[:3],1)) or "1. none"
+    if not matching_enabled:
+        matches_block = "Inventory matches: Not configured"
+    else:
+        match_lines = "\n".join(f"{i}. {_safe(m.get('inventory_id','unknown'))} — {m.get('score',0)}" for i,m in enumerate(matches[:3],1)) or "1. none"
+        matches_block = f"Inventory matches:\n{match_lines}"
     budget=_get(lead,"budget_max") or _get(lead,"budget_min")
     budget=f"{budget:,} IDR" if isinstance(budget,int) else "not stated"
     ptype=_get(lead,"property_type") or "unknown"; beds=_get(lead,"bedrooms")
@@ -35,7 +39,7 @@ def format_preview_card(lead):
             f"Posted: {_age(_get(lead,'post_timestamp'))}\nArea: {_safe(_get(lead,'desired_location'),'unknown')}\n"
             f"Property: {_safe(property_text)}\nBudget: {budget}\nMove-in: {_safe(_get(lead,'move_in_date'))}\n\n"
             f"Why qualified:\n- {_safe('; '.join(reasons) if reasons else 'qualified by scoring rules')}\n\n"
-            f"Inventory matches:\n{match_lines}\n\nRecommended action:\n"
+            f"{matches_block}\n\nRecommended action:\n"
             f"Review the original Threads post and contact manually if appropriate.\n\n{source}")
 def format_card(lead):
     matches='\n'.join(f"- {m['inventory_id']}: {m['title']} ({m['price']:,} IDR/month)" for m in lead.matched_inventory) or '- No inventory match'; breakdown='; '.join(f"{x['rule']} {x['points']:+d} ({x['reason']})" for x in lead.score_breakdown)

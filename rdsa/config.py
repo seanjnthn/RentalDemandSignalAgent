@@ -14,6 +14,7 @@ QUERY_BUDGET = int(os.getenv("RDSA_QUERY_BUDGET_PER_RUN", "40"))
 DB_PATH = os.getenv("RDSA_DB_PATH", str(ROOT / "data" / "rdsa.sqlite3"))
 INVENTORY_CSV = os.getenv("RDSA_INVENTORY_CSV", str(ROOT / "data" / "inventory.csv"))
 INVENTORY_REAL_CSV = os.getenv("RDSA_INVENTORY_REAL_CSV", str(ROOT / "data" / "inventory_real.csv"))
+INVENTORY_MODE = os.getenv("RDSA_INVENTORY_MODE", "real").strip().lower()
 LEAD_RETENTION_DAYS = int(os.getenv("RDSA_LEAD_RETENTION_DAYS", "90"))
 PILOT_QUERIES = ["apartemen", "rumah sewa", "kontrakan", "sewa apartemen"]
 PILOT_MAX_TOTAL_CHARGE_USD = float(os.getenv("RDSA_PILOT_MAX_TOTAL_CHARGE_USD", "0.10"))

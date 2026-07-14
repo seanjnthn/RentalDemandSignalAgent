@@ -42,12 +42,32 @@ class MonthlyUsageGuard:
         self.state_path = Path(state_path or config.APIFY_USAGE_PATH)
         self.warn_at_usd = float(warn_at_usd if warn_at_usd is not None else config.APIFY_WARN_USD)
         self.stop_at_usd = float(stop_at_usd if stop_at_usd is not None else config.APIFY_STOP_USD)
+        # Public report names; *_at_usd remain compatibility aliases.
+        self.warn_usd = self.warn_at_usd
+        self.stop_usd = self.stop_at_usd
         self.price_per_cu = float(price_per_cu if price_per_cu is not None else os.getenv("APIFY_PRICE_PER_CU", "0.5"))
         self._state = self._load()
+        self.last_run_usd = None
 
     @property
     def total_usd(self):
         return float(self._state.get("estimated_usd", 0.0))
+
+    @property
+    def estimated_usd(self):
+        return float(self._state.get("estimated_usd", 0.0))
+
+    @property
+    def actual_usd(self):
+        return float(self._state.get("actual_usd", 0.0))
+
+    @property
+    def accumulated_usd(self):
+        return self.actual_usd if self.actual_usd else self.estimated_usd
+
+    @property
+    def remaining(self):
+        return self.stop_usd - self.accumulated_usd
 
     def _load(self):
         month = datetime.now(timezone.utc).strftime("%Y-%m")
@@ -236,7 +256,7 @@ class ApifyThreadsProvider:
         except (ValueError, TypeError, AttributeError) as exc:
             raise ApifyError("Apify returned malformed JSON") from exc
 
-    def search_batched(self, queries, max_posts_per_query=5, max_total=20, max_total_charge_usd=0.10, timeout=60):
+    def search_batched(self, queries, max_posts_per_query=5, max_total=20, max_total_charge_usd=0.10, timeout=180):
         """Run exactly one read-only Actor execution for all pilot queries."""
         if not apify_live_enabled():
             raise ApifyError("Apify live disabled; set APIFY_LIVE_ENABLED=true to enable it")
@@ -261,7 +281,10 @@ class ApifyThreadsProvider:
         dataset_id=status_obj.get("defaultDatasetId") if isinstance(status_obj,dict) else None
         items_url=f"{self.BASE_URL}/datasets/{dataset_id}/items?token={self.token}" if dataset_id else f"{self.BASE_URL}/actor-runs/{run_id}/dataset/items?token={self.token}"
         items=self._json(self._request("get",items_url,timeout)); items=items if isinstance(items,list) else items.get("items",[]) if isinstance(items,dict) else []
-        self._observe_fields(items); self.usage.record_run({**run,**status_obj})
+        self._observe_fields(items)
+        self.last_run_usd = status_obj.get("usageTotalUsd")
+        self.usage.last_run_usd = status_obj.get("usageTotalUsd")
+        self.usage.record_run({**run,**status_obj})
         return [normalized for item in items[:max_total] if (normalized:=self.normalize(item))][:max_total]
 
     def search(self, queries, max_posts_per_query=5, timeout=60, max_total=20, max_total_charge_usd=0.10):
@@ -313,6 +336,8 @@ class ApifyThreadsProvider:
                 items = items.get("items", []) if isinstance(items, dict) else []
             # Sanitized observability: counts + field names only (no content/token).
             self._observe_fields(items)
+            self.last_run_usd = status_obj.get("usageTotalUsd")
+            self.usage.last_run_usd = status_obj.get("usageTotalUsd")
             self.usage.record_run({**run, **status_obj})
             for item in items[:max_posts_per_query]:
                 normalized = self.normalize(item)
