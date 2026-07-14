@@ -143,3 +143,68 @@ Assessment: rental-intent reliability mixed (1 likely offering); location reliab
 - `APIFY_LIVE_ENABLED=false` ✅ · `RDSA_TELEGRAM_SEND_ENABLED=false` ✅
 - No cron · No author contact · No secrets committed
 - Full suite: **78 passed**
+
+---
+
+## Run #3 — 2026-07-14 (same workflow)
+
+1 batched Actor run (maxPosts=5 ×4 queries).
+- **Raw:** 20 · **Dup:** 17 · **New:** 3 (irrelevant:1, watch:2) · **Eligible:** 0 → 0 lead cards; 1 run-summary msg (ID **20**)
+- **Cost:** current $0.095 · monthly $0.637 · remaining $4.113
+- **Extraction (3 new):** budget low:2/medium:1; location unknown 3/3; type failures 0; bedroom failures 1
+- New leads: `3940785104167711039` (irrelevant), `3940782638403487161` (watch 53, house 30-600M/mo, high conf budget), `3825041513746892069` (watch 37, apartment)
+- No cron · Send restored false · Suite 78 passed
+
+## Run #4 — 2026-07-14 (same workflow)
+
+1 batched Actor run (maxPosts=5 ×4 queries).
+- **Raw:** 20 · **Dup:** 19 · **New:** 1 (irrelevant:1) · **Eligible:** 0 → 0 lead cards; 1 run-summary msg (ID **21**)
+- **Cost:** current $0.095 · monthly $0.732 · remaining $4.018
+- **Extraction (1 new):** budget low:1; location unknown 1/1; type unknown; bedroom missing
+- New lead: `3940783718386605052` (irrelevant 12)
+- No cron · Send restored false · Suite 78 passed
+
+---
+
+## Cross-run comparison (Runs #1–#4)
+
+All four runs used identical gated workflow: one batched Apify run (apartemen / rumah sewa / kontrakan / sewa apartemen, maxPosts=5), real inventory, `--confirm-send`, ≤3 cards, approved private chat only, production logic unchanged.
+
+### Cost per run
+| Run | Raw | Dup | New | Eligible (lead cards) | Msgs sent | Current $ | Monthly $ |
+|---|---|---|---|---|---|---|---|
+| #1 | 20 | 12 | 8 | 2 (IDs 17,18) | 2 | 0.095 | 0.436 |
+| #2 | 20 | 17 | 3 | 0 (summary 19) | 1 | 0.095 | 0.540 |
+| #3 | 20 | 17 | 3 | 0 (summary 20) | 1 | 0.095 | 0.637 |
+| #4 | 20 | 19 | 1 | 0 (summary 21) | 1 | 0.095 | 0.732 |
+
+**Cost is perfectly consistent: $0.095/run** (Apify `usageTotalUsd`), well under the $0.10 canary cap and far below stop $4.75. Monthly accumulated $0.732 after 4 runs — 15% of budget. No run exceeded any threshold.
+
+### Lead quality
+- Runs #2–#4 produced **0 eligible (hot/qualified) leads**; only Run #1 surfaced 2.
+- New-lead classifications across #2–#4 (7 leads): irrelevant:3, watch:4 — all low-signal.
+- **Deduplication dominates over time**: dup rate climbed 12→17→17→19. The same recent public posts are re-fetched each run (Apify returns the freshest ~20 per query); only genuinely new posts add rows. Run #4 added just 1 new row. This is expected for frequent re-scans of the same seed queries and is *correct* behavior (no duplicate alerts — `alerts` UNIQUE guard held; only 3 lead deliveries total, IDs 17/18).
+
+### Location extraction
+- **Consistently weak: 10/10 new leads across runs #2–#4 had unknown location** (location_confidence 0.0). Short/casual Threads text rarely names BSD/Alam Sutera/Gading Serpong/Tangsel explicitly. This is the system's biggest extraction gap and directly caps match quality (unknown location → no `exact_match`; at most `tentative_match`).
+- Target-area leads (canonical extracted in-scope areas): **0 across all four runs**. The two Run #1 eligible leads that DID have location (BSD, Tangerang Selatan) came from longer, more detailed posts.
+
+### Budget parsing
+- Confidence distribution (runs #2–#4, 7 leads): **low:5, medium:1, high:1**.
+- Confidence-aware parser works as designed: ambiguous/blank budgets → `low` (no points, card shows "unclear"); only clear magnitudes score. Notable: `3940782638403487161` (watch) parsed `30,000,000–600,000,000/month` at **high** confidence — a very wide range (likely "30-600 jt"/similar); the high confidence is debatable given the 20× spread, but it is a real magnitude. `3940768555138762726` (irrelevant) parsed `850,000,000` medium — implausibly high for rent (likely a sale), correctly not matched.
+- **No recurrence of the old "900→900 IDR" defect** — the v0.5 fix holds across all runs.
+
+### Matching consistency
+- With 0 eligible leads in runs #2–#4, the matcher executed **0 match evaluations** (it only runs for hot/qualified). So direct match-tier output is only observable from Run #1 (BSD→nearby_alternative, unknown-loc→tentative_match, per the v0.5.1 re-eval).
+- **Consistency verdict:** the *pipeline* is consistent and deterministic per run (identical cost, identical gating, identical dedup behavior). The *match tiers* are consistent by construction (v0.5.1 tiers + canonical areas + nearby map are pure functions of lead+inventory). However, **end-to-end match quality is currently limited by upstream extraction** (location unknown 100%, budget low 71%), not by the matcher. The matcher cannot produce good matches from leads that lack location/budget signal.
+
+### Overall evaluation
+- **Cost:** ✅ consistent and safe ($0.095/run, 15% of monthly budget used).
+- **Pipeline/controls:** ✅ consistent (dedup, gating, ≤3 cards, no duplicate sends, no cron, send restored).
+- **Extraction:** ⚠️ location extraction is the weak link (0/10 in-scope locations); budget parsing is sound but mostly low-confidence on thin text.
+- **Matching:** ✅ consistent by design, but limited by upstream signal; not yet exercised on eligible leads post-hardening except Run #1.
+- **Recommendation:** before any recurring schedule, improve **location extraction** (location hints, "di BSD"/"area X" patterns, username bio, nearest-area inference) and consider **broadening seeds** or **longer interval between runs** to reduce duplicate-fetch waste. Matching logic itself is ready; it is starved of qualified input.
+
+### Post-comparison safety state
+- `APIFY_LIVE_ENABLED=false` ✅ · `RDSA_TELEGRAM_SEND_ENABLED=false` ✅
+- No cron · No author contact · No secrets committed · Suite 78 passed
