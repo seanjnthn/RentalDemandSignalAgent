@@ -2,6 +2,10 @@ import json,sqlite3
 from difflib import SequenceMatcher
 from datetime import datetime,timezone
 
+
+def normalize_post_id(pid) -> str:
+    return str(pid).strip()
+
 def normalize_matched_inventory(value):
     if value is None:
         return []
@@ -13,25 +17,30 @@ def normalize_matched_inventory(value):
     if not isinstance(value, list) or any(item is None or not isinstance(item, dict) for item in value):
         return []
     return value
-SCHEMA='''CREATE TABLE IF NOT EXISTS leads (post_id TEXT PRIMARY KEY,source TEXT NOT NULL DEFAULT 'threads',provider TEXT NOT NULL DEFAULT 'apify',source_url TEXT NOT NULL,author_username TEXT NOT NULL,post_timestamp TEXT NOT NULL,fetched_at TEXT NOT NULL,first_seen TEXT,last_seen TEXT,raw_text TEXT,rental_intent TEXT,desired_location TEXT,location_confidence REAL,property_type TEXT,bedrooms INTEGER,budget_min INTEGER,budget_max INTEGER,budget_currency TEXT DEFAULT 'IDR',budget_period TEXT,budget_confidence TEXT,budget_note TEXT,budget_raw TEXT,move_in_date TEXT,rental_duration TEXT,special_requirements TEXT,lead_class TEXT NOT NULL,lead_score INTEGER NOT NULL,score_breakdown TEXT,score_version TEXT,matched_inventory TEXT,status TEXT NOT NULL DEFAULT 'new',notes TEXT,dedup_hash TEXT,alerted_at TEXT);
+SCHEMA='''CREATE TABLE IF NOT EXISTS leads (post_id TEXT PRIMARY KEY,source TEXT NOT NULL DEFAULT 'threads',provider TEXT NOT NULL DEFAULT 'apify',source_url TEXT NOT NULL,author_username TEXT NOT NULL,post_timestamp TEXT NOT NULL,fetched_at TEXT NOT NULL,first_seen TEXT,last_seen TEXT,raw_text TEXT,rental_intent TEXT,desired_location TEXT,location_confidence REAL,property_type TEXT,bedrooms INTEGER,bedroom_min INTEGER,bedroom_max INTEGER,bedroom_options TEXT,studio_acceptable INTEGER,bedroom_confidence TEXT,bedroom_raw TEXT,budget_min INTEGER,budget_max INTEGER,budget_currency TEXT DEFAULT 'IDR',budget_period TEXT,budget_confidence TEXT,budget_note TEXT,budget_raw TEXT,move_in_date TEXT,rental_duration TEXT,special_requirements TEXT,lead_class TEXT NOT NULL,classifier_reason TEXT,lead_score INTEGER NOT NULL,score_breakdown TEXT,score_version TEXT,matched_inventory TEXT,status TEXT NOT NULL DEFAULT 'new',notes TEXT,dedup_hash TEXT,alerted_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_leads_class ON leads(lead_class);CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);CREATE INDEX IF NOT EXISTS idx_leads_author ON leads(author_username);CREATE INDEX IF NOT EXISTS idx_leads_dedup ON leads(dedup_hash);
-CREATE TABLE IF NOT EXISTS authors(username TEXT PRIMARY KEY,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,lead_count INTEGER NOT NULL DEFAULT 1);CREATE TABLE IF NOT EXISTS alerts(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id TEXT NOT NULL REFERENCES leads(post_id),sent_at TEXT NOT NULL,channel TEXT NOT NULL DEFAULT 'telegram',UNIQUE(post_id,channel));CREATE TABLE IF NOT EXISTS status_history(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id TEXT NOT NULL REFERENCES leads(post_id),old_status TEXT,new_status TEXT NOT NULL,changed_at TEXT NOT NULL,note TEXT);CREATE TABLE IF NOT EXISTS inventory(inventory_id TEXT PRIMARY KEY,title TEXT,location TEXT,property_type TEXT,bedrooms INTEGER,price INTEGER,currency TEXT DEFAULT 'IDR',period TEXT DEFAULT 'month',furnished INTEGER,available_from TEXT,notes TEXT);CREATE TABLE IF NOT EXISTS scan_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,started_at TEXT NOT NULL,finished_at TEXT,queries_used INTEGER,posts_fetched INTEGER,new_leads INTEGER,alerts_sent INTEGER);'''
+CREATE TABLE IF NOT EXISTS authors(username TEXT PRIMARY KEY,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,lead_count INTEGER NOT NULL DEFAULT 1);CREATE TABLE IF NOT EXISTS alerts(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id TEXT NOT NULL REFERENCES leads(post_id),sent_at TEXT NOT NULL,channel TEXT NOT NULL DEFAULT 'telegram',UNIQUE(post_id,channel));CREATE TABLE IF NOT EXISTS delivery_claims(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id TEXT NOT NULL,channel TEXT NOT NULL DEFAULT 'telegram',status TEXT NOT NULL,claimed_at TEXT NOT NULL,sent_at TEXT,message_id TEXT,error TEXT,UNIQUE(post_id,channel));CREATE TABLE IF NOT EXISTS status_history(id INTEGER PRIMARY KEY AUTOINCREMENT,post_id TEXT NOT NULL REFERENCES leads(post_id),old_status TEXT,new_status TEXT NOT NULL,changed_at TEXT NOT NULL,note TEXT);CREATE TABLE IF NOT EXISTS inventory(inventory_id TEXT PRIMARY KEY,title TEXT,location TEXT,property_type TEXT,bedrooms INTEGER,price INTEGER,currency TEXT DEFAULT 'IDR',period TEXT DEFAULT 'month',furnished INTEGER,available_from TEXT,notes TEXT);CREATE TABLE IF NOT EXISTS scan_runs(id INTEGER PRIMARY KEY AUTOINCREMENT,started_at TEXT NOT NULL,finished_at TEXT,queries_used INTEGER,posts_fetched INTEGER,new_leads INTEGER,alerts_sent INTEGER);'''
 def connect(path):
     c=sqlite3.connect(path);c.row_factory=sqlite3.Row;c.executescript(SCHEMA)
     cols={r[1] for r in c.execute('PRAGMA table_info(leads)')}
-    for name, definition in (("provider", "TEXT NOT NULL DEFAULT 'apify'"),("first_seen", "TEXT"),("last_seen", "TEXT"),("notes", "TEXT"),("budget_confidence", "TEXT"),("budget_note", "TEXT"),("budget_raw", "TEXT")):
+    for name, definition in (("provider", "TEXT NOT NULL DEFAULT 'apify'"),("first_seen", "TEXT"),("last_seen", "TEXT"),("notes", "TEXT"),("budget_confidence", "TEXT"),("budget_note", "TEXT"),("budget_raw", "TEXT"),("classifier_reason", "TEXT"),("bedroom_min", "INTEGER"),("bedroom_max", "INTEGER"),("bedroom_options", "TEXT"),("studio_acceptable", "INTEGER"),("bedroom_confidence", "TEXT"),("bedroom_raw", "TEXT")):
         if name not in cols: c.execute(f'ALTER TABLE leads ADD COLUMN {name} {definition}')
     alert_cols={r[1] for r in c.execute('PRAGMA table_info(alerts)')}
     if 'message_id' not in alert_cols: c.execute('ALTER TABLE alerts ADD COLUMN message_id TEXT')
+    c.execute("""INSERT OR IGNORE INTO delivery_claims(post_id,channel,status,claimed_at,sent_at,message_id)
+                 SELECT TRIM(CAST(post_id AS TEXT)),channel,'sent',sent_at,sent_at,message_id FROM alerts""")
     c.commit(); return c
-def existing(c): return [dict(r) for r in c.execute('SELECT post_id,author_username,dedup_hash,raw_text FROM leads')]
+def existing(c):
+    rows=[dict(r) for r in c.execute('SELECT post_id,author_username,dedup_hash,raw_text FROM leads')]
+    for row in rows: row['post_id']=normalize_post_id(row['post_id'])
+    return rows
 def read_matched_inventory(c, post_id):
-    row = c.execute('SELECT matched_inventory FROM leads WHERE post_id=?', (post_id,)).fetchone()
+    row = c.execute('SELECT matched_inventory FROM leads WHERE post_id=?', (normalize_post_id(post_id),)).fetchone()
     return normalize_matched_inventory(row[0] if row else None)
 
 def upsert_lead(c,lead,provider="apify"):
-    d=lead.to_dict(); d['matched_inventory']=normalize_matched_inventory(d.get('matched_inventory')); cols=['post_id','source_url','author_username','post_timestamp','fetched_at','raw_text','rental_intent','desired_location','location_confidence','property_type','bedrooms','budget_min','budget_max','budget_currency','budget_period','budget_confidence','budget_note','budget_raw','move_in_date','rental_duration','special_requirements','lead_class','lead_score','score_breakdown','score_version','matched_inventory','status','dedup_hash']
-    vals=[d[x] for x in cols]; vals=[json.dumps(x) if isinstance(x,(list,dict)) else x for x in vals]
+    d=lead.to_dict(); d['post_id']=normalize_post_id(d['post_id']); d['matched_inventory']=normalize_matched_inventory(d.get('matched_inventory')); cols=['post_id','source_url','author_username','post_timestamp','fetched_at','raw_text','rental_intent','desired_location','location_confidence','property_type','bedrooms','bedroom_min','bedroom_max','bedroom_options','studio_acceptable','bedroom_confidence','bedroom_raw','budget_min','budget_max','budget_currency','budget_period','budget_confidence','budget_note','budget_raw','move_in_date','rental_duration','special_requirements','lead_class','classifier_reason','lead_score','score_breakdown','score_version','matched_inventory','status','dedup_hash']
+    vals=[d.get(x) for x in cols]; vals=[json.dumps(x) if isinstance(x,(list,dict)) else x for x in vals]
     now=datetime.now(timezone.utc).isoformat()
     near=c.execute('SELECT post_id,author_username,raw_text,status FROM leads WHERE post_id != ?',(d['post_id'],)).fetchall()
     normalized=' '.join((d.get('raw_text') or '').lower().split())
@@ -46,9 +55,19 @@ def upsert_lead(c,lead,provider="apify"):
         c.execute('UPDATE leads SET last_seen=? WHERE post_id=?', (now, d['post_id']))
     c.commit();return cur.rowcount
 def already_sent(c, post_id):
-    return c.execute("SELECT 1 FROM alerts WHERE post_id=? AND channel='telegram' LIMIT 1", (post_id,)).fetchone() is not None
+    return c.execute("SELECT 1 FROM alerts WHERE post_id=? AND channel='telegram' LIMIT 1", (normalize_post_id(post_id),)).fetchone() is not None
 def mark_alert(c,post_id,message_id=None):
-    cur=c.execute('INSERT OR IGNORE INTO alerts(post_id,sent_at,message_id) VALUES(?,?,?)',(post_id,datetime.now(timezone.utc).isoformat(),message_id));c.commit();return cur.rowcount
+    cur=c.execute('INSERT OR IGNORE INTO alerts(post_id,sent_at,message_id) VALUES(?,?,?)',(normalize_post_id(post_id),datetime.now(timezone.utc).isoformat(),message_id));c.commit();return cur.rowcount
+
+def claim_delivery(c, post_id, channel='telegram') -> bool:
+    cur=c.execute("INSERT OR IGNORE INTO delivery_claims(post_id,channel,status,claimed_at) VALUES(?,?,'pending',?)",(normalize_post_id(post_id),channel,datetime.now(timezone.utc).isoformat()))
+    c.commit();return cur.rowcount == 1
+
+def complete_delivery(c, post_id, message_id, channel='telegram'):
+    c.execute("UPDATE delivery_claims SET status='sent',sent_at=?,message_id=?,error=NULL WHERE post_id=? AND channel=?",(datetime.now(timezone.utc).isoformat(),message_id,normalize_post_id(post_id),channel));c.commit()
+
+def fail_delivery(c, post_id, error, channel='telegram'):
+    c.execute("UPDATE delivery_claims SET status='failed',error=? WHERE post_id=? AND channel=?",(str(error),normalize_post_id(post_id),channel));c.commit()
 def set_status(c,post_id,new):
     row=c.execute('SELECT status FROM leads WHERE post_id=?',(post_id,)).fetchone()
     if not row: raise ValueError('unknown post')

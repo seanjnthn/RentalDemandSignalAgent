@@ -446,13 +446,81 @@ Apify, Telegram, or database-source logic was changed.**
   remain limited to lead status / notes / reviewed_at / audit. The v0.6.1 import fix is intact
   (and now also per-page). Altair introduces no remote-data/network dependency.
 
+### 8.11. v0.6.3 delivery, newness & classifier hardening (offline, merged)
+
+Offline hardening milestone triggered by Run #5, where an already-alerted lead was re-delivered
+to Telegram and an agent/broker "client cari" post was mis-classified as `hot_lead`. No live calls,
+no DB wipe, no inventory change.
+
+**Run #5 duplicate — root cause.** Delivery used a non-atomic pattern: a pre-send `SELECT`
+(`already_sent`) followed by a post-send `INSERT OR IGNORE` (`mark_alert`). The unique-constraint
+"claim" happened only *after* the Telegram network call, so a duplicate send could occur and was
+then masked (the `alerts` table stayed at 3 rows despite a reported `sent:1`). The fix makes the
+claim atomic and happen *before* the network call.
+
+**Atomic pre-send claim (`rdsa/db.py`).** New `delivery_claims(post_id, channel UNIQUE, status,
+claimed_at, sent_at, message_id, error)` table. `connect()` idempotently backfills `delivery_claims`
+from historical `alerts` (`status='sent'`) so legacy deliveries block future claims.
+`claim_delivery(post_id)` does `INSERT OR IGNORE … ('pending', now)` and returns `rowcount == 1`
+(claimed) vs `0` (already claimed/sent/failed → fail closed). `complete_delivery` sets `sent` +
+`sent_at` + `message_id`; `fail_delivery` sets `failed` + `error` (auditable, never auto-retries).
+**`send_lead_cards` (notifier.py) now claims before sending** — if the claim fails, Telegram is
+never called. The old `already_sent → send → mark_alert` sequence is no longer reachable.
+
+**Current-run newness (`cli.py` / `notifier.py`).** `process_raw` returns `new_post_ids` (post_ids
+actually INSERTed this run; `upsert_lead` returns its `INSERT OR IGNORE` rowcount, so a
+`last_seen`-only refresh is NOT new). Delivery eligibility = `preview_eligible` AND post_id ∈
+`new_post_ids`. A lead merely refreshed is never delivered again. When zero new eligible leads
+exist, no card is sent; an optional concise run summary is sent only with `--summary`
+(`allow_summary`), default off.
+
+**Agent/broker classification (`classifier.py` / `scoring_config.py`).** New
+`THIRD_PARTY_DEMAND_SIGNALS` (contextual phrases: `ada client cari`, `client saya mencari`,
+`untuk klien`, `mencarikan unit`, `butuh listing`, `titipan client`, `co-broke`/`cobroke`,
+`broker`, `agen properti`, `saya lagi ada client cari`, …). Detected *before* ordinary renter
+scoring; fires `agent_broker` with `classifier_reason="third_party_demand: <cue>"`, even when
+intent/location/type/budget are explicit. `GENUINE_SEEKER_CONTROLS` (`untuk saya sendiri`,
+`saya dan keluarga`, `untuk ditempati`, `untuk kami`, `buat saya`) keep first-person seekers
+eligible. `agent_broker` is never Telegram-eligible.
+
+**Budget-period parsing (`budget_parser.py`).** Added explicit Indonesian/English forms:
+yearly `/thn`, `/tahun`, `per thn`, `per tahun`, `setahun`, `tahunan`, `/yr`, `per year`, `annual`;
+monthly `/bln`, `/bulan`, `per bln`, `per bulan`, `sebulan`, `bulanan`, `/mo`, `per month`,
+`monthly`. `50jt/thn` → IDR 50,000,000 yearly with monthly equivalent; `2,5jt/bln` → IDR 2,500,000
+monthly; bare `900` → low confidence, no invented amount.
+
+**Structured bedrooms (`extractor.py` / `Lead`).** New fields `bedroom_min/max`, `bedroom_options`,
+`studio_acceptable`, `bedroom_confidence`, `bedroom_raw`. `parse_bedrooms` preserves alternatives
+(`studio/2KT` → options `[0,2]`, studio accepted) and ranges (`1–2 kamar` → min 1 max 2; `minimal`/
+`maksimal`); the legacy `bedrooms` is set only for an exact single requirement, never an invented
+value. Low-confidence bedroom data cannot produce an exact match.
+
+**Dashboard KPI (`dashboard_repository.py` / `common.py`).** Renamed "Cost / useful lead" to
+**"Cost per contacted lead"** = cumulative Apify cost ÷ leads at `contacted` status or beyond
+(no `worth_contacting` field exists; used an existing explicit workflow-status denominator rather
+than inventing one). Caption clarifies it is not a conversion rate. When the denominator is zero,
+the KPI shows **"Not available"** (never 0 or infinity).
+
+**Tests.** `tests/test_v063_hardening.py` (44 tests): canonical post_id, newness/rowcount,
+atomic claim conflict → 0 Telegram calls, historical alert backfill blocks claim, failed-delivery
+auditability, Run #1/Run #5 duplicate prevented, third-party phrases, genuine-seeker controls,
+yearly/monthly parsing, structured bedrooms, KPI denominator + zero-state, and no-live-call safety.
+`test_telegram_delivery.py` updated to the new default-no-summary behavior. Full suite: **150 passed**.
+
+**Offline Run #5 reprocess (`3940755375813528375`, read-only).** Old `hot_lead`/90, budget `unknown`,
+`bedrooms=1`. Reprocessed: `agent_broker`/82, cue `ada client cari`, budget `year` (monthly eq
+4.17M), bedrooms `min=1,max=2,opts=[0,1,2],studio=True`. Not Telegram-eligible. Historical alert
+(message_id 17) backfills a `sent` claim → `claim_delivery` returns False → zero Telegram calls.
+Historical records were not modified.
+
 ## 11. Rollback
 
-Two safe tags exist:
+Three safe tags exist:
 ```bash
+git checkout v0.6.3-delivery-classifier-hardening   # detached HEAD at merged hardening
 git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix
-git checkout v0.6-operational-dashboard      # detached HEAD at merged operational dashboard
+
 git checkout v0.5.1-matching-hardening      # detached HEAD at matching-quality hardening
 git checkout v0.5-private-telegram-pilot   # detached HEAD at merged private Telegram pilot
 git checkout v0.4-operational-pilot       # detached HEAD at operational pilot (persistence, preview)
