@@ -455,3 +455,82 @@ posts return." Apify returned 12 genuinely-new posts this run, so the absolute-z
 the newness mechanism itself is validated (duplicates excluded, no re-insertion). Zero Telegram cards is
 **not** a failure — it is the correct fail-closed behavior with the send flag disabled.
 
+---
+
+## Run #7 — targeted discovery pilot (2026-07-15, v0.6.3, WITH delivery)
+
+Location-focused discovery pilot. First `search_batched` attempt hit the 180s poll limit (slow
+Apify cold-start) without reaching `SUCCEEDED` (no charge, no send); a **single deliberate
+continuation** with a 300s poll window completed the one intended batched Actor run. Telegram
+delivery was enabled **in-process only** via `RUN7_CONFIRM_SEND=1` (`.env` never modified).
+
+**Command (external driver, not committed):** `env -u PYTHONPATH RUN7_CONFIRM_SEND=1 python run7_driver.py`
+Queries: `apartemen BSD`, `apartemen Gading Serpong`, `rumah sewa Tangerang`, `kontrakan Tangerang Selatan`
+Limits: 1 Actor run, ≤5/query, ≤20 raw, `maxTotalChargeUsd=0.10`, no paid retry, public only, no author contact.
+
+### A. Scan
+- **Actor runs:** 1 charged (the prior poll-timeout attempt did not succeed → no charge)
+- **Raw posts:** 20 · **Normalized:** 20 · **Existing (duplicates):** 1 · **Genuinely new:** 19
+- **new_post_ids count:** 19 (canonical post_id; a refreshed historical post never entered it)
+- **Refreshed historical posts:** 1 (last_seen refreshed, NOT re-inserted, NOT in new_post_ids)
+- **Classifications of new posts:** watch 6, irrelevant 4, qualified_lead 3, agent_broker 6
+- **Target-area new leads:** 13 · **Unknown-location new leads:** 2
+
+### B. Quality
+- **Genuine seekers (new eligible):** 3 qualified_lead (72/73/76) — all first-person "cari/lagi cari"
+- **Agent/broker exclusions:** 6 agent_broker posts → none eligible, none delivered ✅
+- **False positives:** 1 — `3914314253977235827` was an OFFERING/agent post ("buka opsi untuk
+  jual/sewakan unit apartment di BSD") misclassified as qualified_lead; rejected on review
+- **Budget confidence:** low 17, high 2 · **Periods:** year 3, month 2, unknown 14
+  (14 unknown = promotional/short posts with no budget; 3 yearly + 2 monthly parsed correctly,
+  incl. `25-30jt/tahun` → yearly via v0.6.3 fix)
+- **Structured bedrooms:** 1BR exact on the 2 genuine apartment seekers; kontrakan lead had no
+  bedroom stated (None, not invented)
+
+### C. Matching (real inventory only, 3 rows)
+- **Exact matches:** 1 (`3941590145396505502` → `APT-GS-MTOWN-1BR-001`, Gading Serpong 1BR)
+- **Nearby alternatives:** 1 (`3914314253977235827` → `APT-GS-MTOWN-1BR-001`, area nearby)
+- **Tentative matches:** 0 · **No matches:** 17
+- **Real property IDs surfaced:** `APT-GS-MTOWN-1BR-001` only
+- **Commercial reasonableness:** exact match price 2.9M/mo ≤ 4M budget ✅; the rejected offering
+  post and the Tangsel/Bintaro lead (no area fit) correctly produced no genuine match
+
+### D. Telegram (delivery enabled in-process)
+- **New eligible leads:** 3 (qualified_lead)
+- **Delivery claims attempted:** 3 (atomic claim before send)
+- **Claims accepted:** 3 (`status=sent`, message_id + sent_at recorded)
+- **Claims rejected:** 0 this run (none previously sent)
+- **Cards sent:** **3** (≤3 cap) · **Telegram HTTP calls:** 3 · **Message IDs:** 23, 24, 25
+- **Offline second-claim (exactly-once) on the 3 delivered post_ids:** all **False** ✅
+  (no second alert/record; zero additional Telegram HTTP calls)
+- **No lead sent twice** ✅
+
+### E. Cost
+- **Current-run usageTotalUsd:** $0.095 · **Monthly accumulated:** $1.067 (was $0.972, +$0.095)
+- **Remaining to $4.75 stop:** $3.683
+- **Cost per new eligible lead:** $0.095 / 3 = $0.032 · **Cost per delivered lead:** $0.095 / 3 = $0.032
+
+### F. Dashboard review (3 new eligible leads)
+| post_id | class/score | genuine / FP / uncertain | worth contacting | status | note recorded | audit |
+|---|---|---|---|---|---|---|
+| 3914314253977235827 | qualified/72 | **FALSE POSITIVE** (offering/agent) | NO | rejected | yes (194 chars) | yes |
+| 3941590145396505502 | qualified/73 | genuine | YES | reviewed | yes (174) | yes |
+| 3940013694244114292 | qualified/76 | genuine | YES | reviewed | yes (225) | yes |
+
+Match quality: exact match (lead 2) commercially reasonable; lead 3 no area fit; lead 1 rejected.
+No author contacted during this run.
+
+### G. Safety / integrity
+- `APIFY_LIVE_ENABLED=false` · `RDSA_TELEGRAM_SEND_ENABLED=false` (restored immediately after send;
+  in-process only, `.env` never changed) ✅
+- No cron/scheduler ✅ · No author contact ✅ · No secrets modified ✅
+- Historical alerts unchanged (3 rows) ✅ · `delivery_claims` = 6 sent (3 historical + 3 Run #7) ✅
+- Working tree changed only by this PILOT_LOG append (driver script + spurious pending claims from a
+  flawed verification step were cleaned up: 22 → 6 sent claims) ✅
+- 150-test suite re-run after this run (see below) ✅
+
+**Note on verification methodology:** the first exactly-once check loop erroneously called
+`claim_delivery` on ALL 19 new post_ids (incl. 16 never-delivered leads), creating 16 spurious
+`pending` claims. Corrected verification re-claimed only the 3 delivered post_ids → all False.
+Spurious pending rows were deleted; delivered `sent` claims and historical alerts are intact.
+
