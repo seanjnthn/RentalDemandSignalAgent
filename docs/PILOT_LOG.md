@@ -534,3 +534,51 @@ No author contacted during this run.
 `pending` claims. Corrected verification re-claimed only the 3 delivered post_ids → all False.
 Spurious pending rows were deleted; delivered `sent` claims and historical alerts are intact.
 
+---
+
+## v0.6.4 — OFFERING / SUPPLY-SIDE CLASSIFIER HARDENING (offline; branch fix/v064-offering-classifier-hardening)
+
+Follow-up to Run #7: post `3914314253977235827` ("buka opsi untuk jual / sewakan unit apartment
+di BSD") was an **owner offering** a unit but was misclassified `qualified_lead`/72 and Telegram-
+delivered (message ID 25), then rejected on manual review. This milestone adds supply-side /
+offering detection so advertising posts are never eligible. Offline: no Apify, no Telegram, no DB
+wipe, no inventory change, no cron.
+
+### Defect
+Classifier caught third-party *sourcing* (`THIRD_PARTY_DEMAND_SIGNALS`) but had no supply-side
+detection for an owner advertising their own unit. Offering posts with no "client" cue fell to the
+`seeking` branch → `qualified_lead`.
+
+### Fix (`rdsa/classifier.py` + `rdsa/scoring_config.py`)
+- `OFFERING_SIGNALS` + `LISTING_STRUCTURE_SIGNALS` (specs/price/facility/availability/contact/URL/
+  marketing) for listing detection with/without an explicit verb.
+- `STRONG_OFFERING` (classifier-local) now includes `harga sewa` so an asking price triggers supply
+  classification (price-amount guard retained).
+- `classify` detects offering/supply-side **before** demand (`is_offering = strong or
+  (offering_cue and structure_score ≥ 3)`). Supply-side + no genuine control → `agent_broker`
+  (reason `offering_supply: <cue>`); + genuine control → ambiguous (kept eligible). Discussion/
+  questions mentioning only a bare verb are NOT listings.
+- `BROKER_SIGNALS` (English `for rent`, `contact us`, `many units`, `wa admin`) re-fed into offering/
+  agent detection — this fixed a regression where synthetic post `4013` ("For rent! … Contact us …
+  Many units available") had become `irrelevant` instead of `agent_broker`.
+- Priority: supply-side > third-party sourcing > genuine seeker. `agent_broker` reused (no new class).
+
+### Tests
+`tests/test_v064_offering_classifier.py` (25 tests): supply-side phrases, agent third-party, genuine
+seekers, ambiguous/discussion controls, Run #7 post reprocess, no regression to v0.6.3. Full suite:
+**175 passed** (150 + 25).
+
+### Offline reprocess (`3914314253977235827`, read-only)
+- Old: `qualified_lead`/72, eligible, WAS delivered (message ID 25).
+- New: `agent_broker`/~40, reason `offering_supply: sewakan`, **Telegram-ineligible**, zero cards.
+- Historical delivery claim (msg 25), `alerts` (3 rows), `delivery_claims` (6 rows) **unchanged**.
+
+### STEP 4 guarantees
+- Offering/supply-side posts never Telegram-eligible ✅
+- Agent/broker posts (sourcing + offering) ineligible ✅
+- Only newly-inserted genuine hot/qualified demand leads deliverable ✅
+- Historical Run #7 records and delivery claims untouched ✅
+
+Final: **175 passed** · no live calls · no DB wipe · historical alerts/claims unchanged · both live
+flags false · no cron.
+

@@ -513,10 +513,50 @@ yearly/monthly parsing, structured bedrooms, KPI denominator + zero-state, and n
 (message_id 17) backfills a `sent` claim → `claim_delivery` returns False → zero Telegram calls.
 Historical records were not modified.
 
+### 8.12. v0.6.4 offering / supply-side classifier hardening (offline, merged)
+
+Follow-up to Run #7, where post `3914314253977235827` (an owner **offering** "buka opsi untuk
+jual / sewakan unit apartment di BSD") was misclassified `qualified_lead`/72 and Telegram-delivered
+(message ID 25), then rejected on manual review. No live calls, no DB wipe, no inventory change.
+
+**Defect.** The classifier caught third-party *sourcing* (`THIRD_PARTY_DEMAND_SIGNALS`) but had no
+supply-side / offering detection for an **owner advertising their own unit**. An offering post with
+no "client" cue fell through to the `seeking` branch → `qualified_lead`.
+
+**Fix (`rdsa/classifier.py` + `rdsa/scoring_config.py`).**
+- `OFFERING_SIGNALS`: contextual offering phrases (`disewakan`, `saya ada unit`, `unit available`,
+  `direct owner`, `harga sewa`, `dm untuk detail`, `menerima titip`, `agent/broker listing`,
+  `buka opsi`, `under market price`, …).
+- `LISTING_STRUCTURE_SIGNALS`: specs + price + facility + availability + contact + listing-URL +
+  marketing language; several co-occurring ⇒ listing even without an explicit verb.
+- `STRONG_OFFERING` (classifier-local) now includes `harga sewa` so an asking price triggers supply
+  classification (the price-amount guard in `_unit_price_contact` stays).
+- `classify` detects offering/supply-side **before** demand: `is_offering = strong or
+  (offering_cue and structure_score ≥ 3)`. Supply-side with no genuine-seeker control ⇒
+  `agent_broker` (reason `offering_supply: <cue>`); with a genuine control ⇒ ambiguous (kept
+  eligible, reason `ambiguous_offering_seeker`). Discussion/questions that mention only a bare verb
+  (e.g. "ada yang tahu apartemen yang disewakan?") are NOT listings.
+- `BROKER_SIGNALS` (English `for rent`, `contact us`, `many units`, `wa admin`) re-fed into the
+  offering/agent detection so English listings (synthetic post `4013`) stay `agent_broker` — this
+  was a regression risk when the old `BROKER_SIGNALS` branch was replaced.
+
+**Priority:** supply-side > third-party sourcing > genuine seeker. Agent/broker posts (both
+sourcing and offering) are never Telegram-eligible. No new `supply_listing` class was introduced —
+`agent_broker` is reused to avoid schema/dashboard changes.
+
+**Tests.** `tests/test_v064_offering_classifier.py` (25 tests): supply-side phrases, agent
+third-party, genuine seekers, ambiguous/discussion controls, the Run #7 post reprocess, and no
+regression to v0.6.3 third-party controls. Full suite: **175 passed** (150 + 25).
+
+**Offline reprocess (`3914314253977235827`, read-only).** Old `qualified_lead`/72 (eligible, was
+delivered) → new `agent_broker`/~40 (reason `offering_supply: sewakan`), Telegram-ineligible, zero
+cards. Historical delivery claim (message ID 25) and `alerts`/`delivery_claims` rows unchanged.
+
 ## 11. Rollback
 
-Three safe tags exist:
+Four safe tags exist:
 ```bash
+git checkout v0.6.4-offering-classifier-hardening   # detached HEAD at merged offering/supply hardening
 git checkout v0.6.3-delivery-classifier-hardening   # detached HEAD at merged hardening
 git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix
