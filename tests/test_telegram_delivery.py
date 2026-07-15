@@ -59,7 +59,16 @@ def test_redaction_and_card_sanitization():
     assert "081234567890" not in card and "me@example.com" not in card
 
 
-def test_no_eligible_sends_one_summary(monkeypatch):
+def test_no_eligible_sends_no_summary_by_default(monkeypatch):
     monkeypatch.setattr(config, "TELEGRAM_SEND_ENABLED", True)
-    n=FakeNotifier(); send_lead_cards(n, [lead("x", klass="watch")], connect(":memory:"), posts_scanned=2, new_leads=1)
-    assert len(n.calls) == 1 and "run complete" in n.calls[0]
+    n = FakeNotifier()
+    sent = send_lead_cards(n, [lead("x", klass="watch")], connect(":memory:"), posts_scanned=2, new_leads=1)
+    # v0.6.3: default behavior is NO lead delivery and NO summary unless explicitly requested.
+    assert sent == 0 and len(n.calls) == 0
+
+
+def test_no_eligible_sends_one_summary_when_requested(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_SEND_ENABLED", True)
+    n = FakeNotifier()
+    sent = send_lead_cards(n, [lead("x", klass="watch")], connect(":memory:"), posts_scanned=2, new_leads=1, allow_summary=True)
+    assert sent == 1 and len(n.calls) == 1 and "run complete" in n.calls[0]

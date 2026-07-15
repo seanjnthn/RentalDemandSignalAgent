@@ -345,3 +345,51 @@ Per-lead review (delivered lead):
 Final: suite **105 passed** · Streamlit HTTP 200 · no credentials/chat-ID exposed · no synthetic
 inventory · 1 live Actor run, $0.095, monthly $0.87.
 
+---
+
+## v0.6.3 — DELIVERY, NEWNESS & CLASSIFIER HARDENING (offline; branch fix/v063-delivery-classifier-hardening)
+
+Follow-up to Run #5 (recorded on master as commit `52f5984`): an already-alerted lead was
+re-delivered to Telegram and an agent/broker "client cari" post was mis-classified `hot_lead`.
+This milestone is **offline** (no Apify, no Telegram, no DB wipe, no inventory change) and fixes
+the root causes.
+
+### Run #5 duplicate — root cause
+Delivery used a **non-atomic** pattern: a pre-send `SELECT` (`already_sent`) followed by a post-send
+`INSERT OR IGNORE` (`mark_alert`). The unique-constraint "claim" happened only *after* the Telegram
+network call, so a duplicate send could occur and was then masked (the `alerts` table stayed at 3 rows
+despite a reported `sent:1`).
+
+### Fixes
+- **Atomic pre-send claim:** new `delivery_claims(post_id, channel UNIQUE, status, claimed_at,
+  sent_at, message_id, error)` table. `connect()` idempotently backfills it from historical `alerts`
+  (`status='sent'`). `claim_delivery` does `INSERT OR IGNORE … ('pending', now)` and returns True only
+  when the claim is new; on conflict (already claimed/sent/failed) it returns False and **Telegram is
+  never called** (fail closed). The old `already_sent → send → mark_alert` sequence is gone.
+- **Current-run newness:** `process_raw` returns `new_post_ids` (only rows actually INSERTed this run;
+  a `last_seen`-only refresh is NOT new). Delivery requires `post_id ∈ new_post_ids`. Zero new eligible
+  leads → no card; optional summary only with `--summary` (default off).
+- **Agent/broker hardening:** `THIRD_PARTY_DEMAND_SIGNALS` (contextual: `ada client cari`, `client saya
+  mencari`, `untuk klien`, `mencarikan unit`, `butuh listing`, `titipan client`, `co-broke`/`cobroke`,
+  `broker`, `agen properti`, `saya lagi ada client cari`, …) fires `agent_broker` before renter scoring,
+  with `classifier_reason`. Genuine first-person controls (`untuk saya sendiri`, `saya dan keluarga`,
+  `untuk ditempati`, `untuk kami`) keep seekers eligible. `agent_broker` is never Telegram-eligible.
+- **Budget period:** added `/thn`, `/tahun`, `per thn`, `setahun`, `tahunan`, `/yr`, `per year`, `annual`
+  (yearly) and `/bln`, `sebulan`, `bulanan`, `/mo`, `per month` (monthly). `50jt/thn` → IDR 50,000,000
+  yearly + monthly equivalent; `2,5jt/bln` → IDR 2,500,000 monthly; bare `900` → low confidence.
+- **Structured bedrooms:** `bedroom_min/max`, `bedroom_options`, `studio_acceptable`, `bedroom_confidence`,
+  `bedroom_raw`. Alternatives/ranges preserved; legacy `bedrooms` set only for exact single (no invented
+  value).
+- **Dashboard KPI:** "Cost / useful lead" → **"Cost per contacted lead"** (cumulative Apify cost ÷ leads
+  at `contacted` status or beyond; no `worth_contacting` field exists, so an explicit workflow-status
+  denominator was used). Zero denominator shows **"Not available"** (never 0/infinity).
+
+### Offline Run #5 reprocess (read-only, historical records untouched)
+`3940755375813528375`: old `hot_lead`/90, budget `unknown`, `bedrooms=1` → new `agent_broker`/82, cue
+`ada client cari`, budget `year` (monthly eq 4.17M), bedrooms `min=1,max=2,opts=[0,1,2],studio=True`.
+Historical alert (message_id 17) backfills a `sent` claim → `claim_delivery` returns False → zero
+Telegram calls. Not Telegram-eligible.
+
+Final: suite **150 passed** (105 baseline + 44 new + 1 updated) · no live calls · no DB wipe ·
+historical alerts/leads unchanged · both live flags false · no cron.
+

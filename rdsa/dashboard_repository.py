@@ -152,7 +152,8 @@ def get_overview(filters: dict[str, Any] | None = None, db_path: str | Path = DE
             cost = 0.0
     except (OSError, ValueError, TypeError): cost = 0.0
     qualified = counts["hot_lead"] + counts["qualified_lead"]
-    return {"total": len(leads), "new": statuses["new"], "hot": counts["hot_lead"], "qualified": counts["qualified_lead"], "watch": counts["watch"], "exact_match": matches["exact_match"], "nearby_alternative": matches["nearby_alternative"], "tentative_match": matches["tentative_match"], "no_match": matches["no_match"], "unknown_location": sum(x["desired_location"] == "Unknown" for x in leads), "telegram_delivered": delivered, "apify_cost": cost, "cost_per_qualified": cost / qualified if qualified else None}
+    contacted = sum(statuses[s] for s in ("contacted", "responded", "viewing_scheduled", "negotiating", "converted"))
+    return {"total": len(leads), "new": statuses["new"], "hot": counts["hot_lead"], "qualified": counts["qualified_lead"], "watch": counts["watch"], "exact_match": matches["exact_match"], "nearby_alternative": matches["nearby_alternative"], "tentative_match": matches["tentative_match"], "no_match": matches["no_match"], "unknown_location": sum(x["desired_location"] == "Unknown" for x in leads), "telegram_delivered": delivered, "apify_cost": cost, "cost_per_contacted": cost / contacted if contacted else None}
 
 
 def get_inventory(path: str | Path = DEFAULT_INVENTORY) -> dict[str, Any]:

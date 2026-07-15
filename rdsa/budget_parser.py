@@ -36,8 +36,8 @@ def _number(value: str, multiplier: int = 1) -> int:
 def parse_budget(text: str) -> BudgetResult:
     raw = text or ""
     low = raw.lower()
-    if re.search(r"(?:per\s+bulan|/\s*bulan|monthly|/\s*bln|per\s*bln)", low): period = "month"
-    elif re.search(r"(?:per\s+tahun|/\s*tahun|\byear\b|\bannual\b)", low): period = "year"
+    if re.search(r"(?:/\s*bln|/\s*bulan|per\s+bln|per\s+bulan|sebulan|bulanan|/\s*mo|per\s+month|monthly)", low): period = "month"
+    elif re.search(r"(?:/\s*thn|/\s*tahun|per\s+thn|per\s+tahun|setahun|tahunan|/\s*yr|per\s+year|\byear\b|annual)", low): period = "year"
     else: period = "unknown"
     range_match = re.search(rf"({_NUMBER})\s*[-–]\s*({_NUMBER})\s*(rb|ribu|k|jt|juta|m|million)\b", low, re.I)
     if range_match:

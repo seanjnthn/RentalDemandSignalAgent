@@ -24,11 +24,18 @@ def filter_controls(prefix="global"):
 
 def render_kpis(data):
     from dashboard.components import kpi_card
-    fields=[("Total leads","total"),("Hot","hot"),("Qualified","qualified"),("Target area","target_area"),("Active real matches","active_matches"),("Telegram delivered","telegram_delivered"),("Cumulative cost", "apify_cost"),("Cost / useful lead","cost_per_qualified")]
+    fields=[("Total leads","total"),("Hot","hot"),("Qualified","qualified"),("Target area","target_area"),("Active real matches","active_matches"),("Telegram delivered","telegram_delivered"),("Cumulative cost", "apify_cost"),("Cost per contacted lead","cost_per_contacted")]
     cols=st.columns(4)
     for i,(name,key) in enumerate(fields):
         value=data.get(key)
-        if key in ("apify_cost","cost_per_qualified"): value="—" if value is None else f"${value:.3f}"
+        if key=="apify_cost":
+            value="—" if value is None else f"${value:.3f}"
+        elif key=="cost_per_contacted":
+            # Explicit denominator: leads that reached contacted status or beyond.
+            # When the denominator is zero, show "Not available" (never 0 or infinity).
+            value="Not available" if value is None else f"${value:.3f}"
         if key=="target_area": value=data.get("target_area", data.get("total",0)-data.get("unknown_location",0))
         if key=="active_matches": value=sum(data.get(k,0) for k in ("exact_match","nearby_alternative","tentative_match"))
         with cols[i%4]: kpi_card(name,value)
+    st.caption("Cost per contacted lead = cumulative Apify cost ÷ leads that reached contacted status or beyond. "
+               "This is not a conversion rate.")

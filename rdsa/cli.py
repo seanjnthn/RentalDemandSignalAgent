@@ -8,7 +8,7 @@ from .classifier import classify
 from .ingest import is_duplicate
 from .matcher import load_inventory,match
 from .inventory import load_real_inventory, validate_real_inventory_for_scan
-from .db import connect,existing,upsert_lead,mark_alert,set_status
+from .db import connect,existing,upsert_lead,mark_alert,set_status,normalize_post_id
 from .notifier import format_card,format_preview_card,preview_eligible,TelegramNotifier,send_lead_cards
 from .threads_client import ThreadsClient
 from .apify_provider import ApifyThreadsProvider, apify_live_enabled
@@ -40,7 +40,7 @@ def process_raw(raw_posts, source, args, c, inventory_mode=None):
     if not matching_enabled and (inventory_mode or config.INVENTORY_MODE) == "real":
         print("Real inventory is not configured. Lead discovery will continue, but inventory matching is disabled.")
     old=existing(c) if c is not None else []
-    new=alerts=duplicates=preview_count=normalized_posts=inventory_matches=0; classes={}; target_location=0; run_leads=[]
+    new=alerts=duplicates=preview_count=normalized_posts=inventory_matches=0; classes={}; target_location=0; run_leads=[]; new_post_ids=[]
     exact_area_matches=nearby_alternatives=tentative_matches=no_matches=unknown_location_leads=0
     target_areas = set(config.CANONICAL_AREAS) - {"Suvarna Sutera"}
     for item in raw_posts:
@@ -60,7 +60,9 @@ def process_raw(raw_posts, source, args, c, inventory_mode=None):
                 elif kind == "tentative_match": tentative_matches += 1
                 elif kind == "no_match": no_matches += 1
         if c is not None:
-            upsert_lead(c,lead,source)
+            inserted = upsert_lead(c, lead, source)
+            if inserted:
+                new_post_ids.append(normalize_post_id(lead.post_id))
         old.append({'post_id':lead.post_id,'author_username':lead.author_username,'dedup_hash':lead.dedup_hash,'raw_text':lead.raw_text}); new+=1
         run_leads.append(lead)
         classes[lead.lead_class]=classes.get(lead.lead_class,0)+1
@@ -77,6 +79,7 @@ def process_raw(raw_posts, source, args, c, inventory_mode=None):
             'unknown_location_leads': unknown_location_leads, 'inventory_matches': inventory_matches,
             'leads': run_leads,
             'preview_count': preview_count, 'matching_enabled': matching_enabled,
+            'new_post_ids': new_post_ids,
             # Compatibility for callers of the original per-scan result.
             'new': new, 'alerts': alerts, 'classes': classes}
 
@@ -169,8 +172,11 @@ def run_pilot_send(args):
     args.pilot=True; args.dry_run=True
     result=process_raw(raw, "apify", args, c, inventory_mode="real")
     eligible=[lead for lead in result["leads"] if preview_eligible(lead)]
+    # Current-run newness: only leads inserted in THIS run may be delivered. A lead
+    # whose last_seen was merely refreshed (already-existing) is never delivered again.
     delivered=send_lead_cards(TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_ALLOWED_CHAT_ID), eligible, c,
-                              matching_enabled=True, posts_scanned=result["raw_posts"], new_leads=result["new_rows"])
+                              matching_enabled=True, posts_scanned=result["raw_posts"], new_leads=result["new_rows"],
+                              new_post_ids=result.get("new_post_ids", []), allow_summary=getattr(args, "summary", False))
     cumulative=_cumulative_report(c); evaluation=_evaluation_report(c); guard=provider.usage
     cost={"current_run_usage_usd":getattr(provider,"last_run_usd",None),"monthly_accumulated_usd":guard.accumulated_usd,
           "warn_usd":guard.warn_usd,"stop_usd":guard.stop_usd,"remaining_usd":guard.remaining,
@@ -184,7 +190,7 @@ def main(argv=None):
     sub.add_parser('init-db'); s=sub.add_parser('scan');s.add_argument('--source',choices=['synthetic','threads','apify'],default='synthetic');s.add_argument('--dry-run',action='store_true')
     sub.add_parser('pilot-scan')
     t=sub.add_parser('telegram-test'); t.add_argument('--confirm-send',action='store_true')
-    ps=sub.add_parser('pilot-send'); ps.add_argument('--confirm-send',action='store_true')
+    ps=sub.add_parser('pilot-send'); ps.add_argument('--confirm-send',action='store_true'); ps.add_argument('--summary',action='store_true',help='send a concise run summary when zero new eligible leads (off by default)')
     l=sub.add_parser('list');l.add_argument('--class',dest='klass'); st=sub.add_parser('status');st.add_argument('post_id');st.add_argument('new_status');sub.add_parser('match');sub.add_parser('notify');sub.add_parser('reprocess');sub.add_parser('purge')
     a=p.parse_args(argv); c=connect(config.DB_PATH)
     if a.cmd=='init-db': print(f'Database initialized: {config.DB_PATH}')

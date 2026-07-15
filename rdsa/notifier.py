@@ -63,25 +63,53 @@ class TelegramNotifier:
         except Exception as exc:
             raise RuntimeError(redact_token(f"Telegram delivery failed: {exc}")) from None
 
-def send_lead_cards(notifier, eligible_leads, c, matching_enabled=True, posts_scanned=None, new_leads=None):
+def send_lead_cards(notifier, eligible_leads, c, matching_enabled=True, posts_scanned=None, new_leads=None,
+                    new_post_ids=None, allow_summary=False):
+    """Fail-closed Telegram delivery.
+
+    Atomically claims each post_id via the `delivery_claims` unique constraint
+    BEFORE calling Telegram. A lead is only sent when the claim succeeds. If the
+    post_id was already claimed/delivered (historical alert, prior claim, or a
+    concurrent caller), the claim fails and Telegram is never called.
+
+    Current-run newness: when `new_post_ids` is provided, only leads whose post_id
+    was inserted in the current run are eligible. Leads whose `last_seen` was merely
+    refreshed (already-existing) are never delivered.
+
+    When zero new eligible leads exist, no lead card is sent. A single concise run
+    summary is sent only when `allow_summary=True` (explicit operator request).
+    """
     if not config.TELEGRAM_SEND_ENABLED:
         print("Telegram sending disabled (set RDSA_TELEGRAM_SEND_ENABLED=true and pass --confirm-send).")
         return 0
-    leads=sorted((x for x in eligible_leads if preview_eligible(x)), key=lambda x: _get(x,"lead_score",0), reverse=True)[:MAX_CARDS_PER_RUN]
-    sent=0
+    from .db import claim_delivery, complete_delivery, fail_delivery
+    new_set = set(new_post_ids) if new_post_ids is not None else None
+    candidates = [x for x in eligible_leads if preview_eligible(x)]
+    if new_set is not None:
+        candidates = [x for x in candidates if _get(x, "post_id") in new_set]
+    leads = sorted(candidates, key=lambda x: _get(x, "lead_score", 0), reverse=True)[:MAX_CARDS_PER_RUN]
+    sent = 0
     if not leads:
-        n=posts_scanned if posts_scanned is not None else 0; m=new_leads if new_leads is not None else 0
-        try: notifier.send(f"RDSA pilot run complete: {n} posts scanned, {m} new leads, 0 eligible for alert. No action needed.")
-        except Exception as exc: print(f"{redact_token(exc)}")
-        return 1
-    from .db import already_sent, mark_alert
+        if allow_summary:
+            n = posts_scanned if posts_scanned is not None else 0
+            m = new_leads if new_leads is not None else 0
+            try:
+                notifier.send(f"RDSA pilot run complete: {n} posts scanned, {m} new leads, 0 eligible for alert. No action needed.")
+            except Exception as exc:
+                print(f"{redact_token(exc)}")
+            return 1
+        return 0
     for lead in leads:
-        post_id=_get(lead,"post_id")
-        if already_sent(c, post_id): continue
+        post_id = _get(lead, "post_id")
+        if not claim_delivery(c, post_id):
+            # Already claimed/delivered (historical alert, prior claim, or concurrent caller).
+            # Fail closed: do NOT call Telegram.
+            continue
         try:
-            message_id=notifier.send(format_preview_card(lead, matching_enabled=matching_enabled))
-            mark_alert(c, post_id, message_id)
+            message_id = notifier.send(format_preview_card(lead, matching_enabled=matching_enabled))
+            complete_delivery(c, post_id, message_id)
             sent += 1
         except Exception as exc:
+            fail_delivery(c, post_id, redact_token(exc))
             print(f"{redact_token(exc)}")
     return sent
