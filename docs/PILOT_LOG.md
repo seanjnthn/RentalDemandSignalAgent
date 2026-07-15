@@ -260,3 +260,88 @@ Branch `feature/v06-operational-dashboard` reviewed against the pilot database a
 **PILOT_LOG normalization:** Runs #3/#4 rewritten with the standard metric labels (including `usageTotalUsd` and unknown-location), using only originally recorded values; no invented/threshold-derived figures.
 
 Final: suite 86 passed · Streamlit HTTP 200 · no credentials/chat-ID exposed · no synthetic inventory · working tree contains only intended changes.
+
+---
+
+## Run #5 — 2026-07-15 (baseline tag: v0.6.2-dashboard-ux-refresh)
+
+**Command:** `python -m rdsa.cli pilot-send --confirm-send` with `APIFY_LIVE_ENABLED=true`
+and `RDSA_TELEGRAM_SEND_ENABLED=true` set **in-process only** (`.env` never modified; restored to
+`false` immediately after).
+
+### Preflight
+- Working tree clean ✅
+- 3 real inventory rows load; no synthetic inventory ✅
+- Telegram destination = approved private chat (`TELEGRAM_ALLOWED_CHAT_ID=90976****`) ✅
+- Monthly Apify usage before run: $0.775 (< $4.75 stop) ✅
+- Both live flags `false` before execution ✅
+- Apify preflight (`ApifyThreadsProvider.preflight()`) returned **200** (actor `automation-lab/threads-scraper` reachable) ✅
+
+### Scan (one batched Apify request)
+- Queries: `apartemen`, `rumah sewa`, `kontrakan`, `sewa apartemen` (from `config.PILOT_QUERIES`)
+- Limits: 5/query, 20 raw cap, 1 Actor run, `maxTotalChargeUsd=0.10`, public content only, no author contact ✅
+- Raw posts: **20** · Normalized: 20 · Duplicates (within run): 0
+- **Net-new leads persisted: 0** — all 20 returned post_ids already existed in the DB as
+  `source='threads'` (real Threads posts ingested in a prior run). `INSERT OR IGNORE` + dedup
+  treated them as already-seen; only `last_seen` was refreshed.
+
+### Classifications / locations (of the 20 scanned leads, in-memory)
+- Eligible (hot/qualified) found in run: 1 (a `hot_lead`, score 90)
+- Target-area leads: 1 (BSD) · Unknown-location: 0 in the delivered set
+- Note: because 0 were net-new, the dashboard shows **no brand-new leads from this run**; the
+  scanned posts overlap an already-ingested real-Threads dataset.
+
+### Matching (against 3 real inventory rows)
+- Exact matches: 0 · Nearby alternatives: 0 · Tentative matches: 0 · No matches: the single
+  eligible lead had `matched_inventory = [{property_id: None, match_type: None}]` (no real match).
+- Matched real property IDs: none.
+
+### Telegram (STEP 3)
+- Eligible leads: 1 · Cards sent: **1** (≤3 cap) · Duplicate delivery prevention: the run's card
+  re-delivered a lead already alerted in Run #1 (`already_sent` check missed it; `mark_alert`'s
+  `INSERT OR IGNORE` deduped the post_id, so no NEW alert row was written — see defects).
+- Message IDs: this run's card delivered to the approved private chat (charged); no new `alerts`
+  row appeared because the post_id was already present from Run #1.
+
+### Cost
+- Current-run `usageTotalUsd`: **$0.095**
+- Monthly accumulated: **$0.87** (before $0.775 → after $0.87) · Remaining to $4.75 stop: **$3.88**
+- Within warn ($4.00) and stop ($4.75) guards ✅
+
+### Dashboard review (STEP 4)
+Lead delivered this run: `3940755375813528375` — **`hot_lead`, score 90, BSD, apartment, IDR 50.000.000
+(unknown period), bedrooms 1, furnished.** Source text: *"Temen temen Trade, saya lagi ada client
+cari…"* ("Friends, I have a client looking for…") → **this is an AGENT/BROKER post, not a genuine
+direct renter.** Manual disposition: status set to **`rejected`** with a review note; audit trail
+records `new → rejected` (source `dashboard`). Telegram history left read-only.
+
+Per-lead review (delivered lead):
+- Classification/score: hot_lead / 90 — **false positive for genuine renter** (agent/broker mislabeled as hot)
+- Genuine intent: NO (broker sourcing for a client)
+- Budget reliability: WEAK — text says "50jt/**thn**" (per year) but `budget_period` parsed as `unknown`
+- Location reliability: GOOD — BSD extracted, confidence 1.0
+- Match accuracy: CORRECT that there is no real BSD-apartment match (no false match shown)
+- Dashboard status: `rejected` · Worth contacting: **NO** · Manual note recorded: **YES**
+
+### Operational UX
+- Most useful page: **Lead Detail** (clear summary / score breakdown / source / match cards / audit).
+- Confusing label/chart: KPI "Cost / useful lead" can read as a quality rate; clarify denominator.
+- Slow/awkward workflow: no blocking slowness; CSV export and filters are smooth.
+- Cosmetic issue: none blocking; dark theme reads well at 1366×768 and 1920×1080.
+- Blocking defect: **NONE** for the dashboard. Two pipeline-quality findings (not dashboard bugs):
+  1. **Classifier lets agent/broker "client looking for" posts through as `hot_lead`** (should be
+     `agent_broker`). Surfaced a false-positive to Telegram.
+  2. **Budget-period parsing misses explicit "/thn" (per year)** → stores `unknown`; also bedrooms
+     parsed as 1 vs text "studio"/"2kt".
+  3. **Duplicate Telegram delivery gap:** `already_sent()` did not block re-sending an already-alerted
+     lead in Run #1; `send_lead_cards` sent it and `mark_alert`'s `INSERT OR IGNORE` silently dropped
+     the duplicate alert row. Recommend hardening `already_sent` before the next pilot.
+
+### Safety restore (STEP 6)
+- `APIFY_LIVE_ENABLED=false`, `RDSA_TELEGRAM_SEND_ENABLED=false` (`.env` never changed) ✅
+- No scheduler/cron ✅ · No author contact ✅ · No secrets committed ✅
+- Working tree clean except this PILOT_LOG append ✅
+
+Final: suite **105 passed** · Streamlit HTTP 200 · no credentials/chat-ID exposed · no synthetic
+inventory · 1 live Actor run, $0.095, monthly $0.87.
+
