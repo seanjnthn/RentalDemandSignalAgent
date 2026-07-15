@@ -393,3 +393,65 @@ Telegram calls. Not Telegram-eligible.
 Final: suite **150 passed** (105 baseline + 44 new + 1 updated) · no live calls · no DB wipe ·
 historical alerts/leads unchanged · both live flags false · no cron.
 
+---
+
+## Warm-DB validation scan (2026-07-15, post-v0.6.3)
+
+Controlled live Apify scan against the warm `rdsa.sqlite3` (90 leads, 3 historical alerts/claims
+at `sent`) to validate v0.6.3's delivery atomicity, current-run newness, and classifier hardening.
+
+**Command (in-process flags only; `.env` never modified):**
+`env -u PYTHONPATH APIFY_LIVE_ENABLED=true python -m rdsa.cli pilot-scan`
+(Telegram intentionally left disabled — `RDSA_TELEGRAM_SEND_ENABLED` stayed `false` the whole time.)
+
+**Queries / limits:** `apartemen`, `rumah sewa`, `kontrakan`, `sewa apartemen`; 1 Actor run,
+≤5/query, ≤20 raw cap, `maxTotalChargeUsd=0.10`, no paid retry, no author contact, no scheduler.
+
+**Note on execution:** the first invocation appeared to time out at the 60s tool cap but had already
+completed the Apify fetch (run #126, charged) and persisted 9 leads (04:47:04). A second background
+invocation fetched again (04:47:50) — Apify served it from cache (no new charge), returning 3 further
+new posts. Net: **two fetches, one charged run, 12 new leads total** (9 + 3). Duplicate prevention was
+exercised: the 9 leads from the first fetch became "duplicates" (last_seen refreshed) in the second
+run and were NOT re-inserted.
+
+### Results (this session, warm DB)
+- **Raw posts fetched:** 20 (second/background run view; 3 new + 17 already-present)
+- **Existing posts (already in DB):** 17 (incl. the 9 from the first fetch) — `last_seen` refreshed, NOT re-added
+- **Genuinely new posts (this session):** 12 total (9 at 04:47:04 + 3 at 04:47:50)
+- **New eligible leads (2nd run, `new_post_ids`):** 3 → classifications: `irrelevant`, `qualified_lead`/70 (1 eligible), `agent_broker` (not eligible)
+- **Historical eligible leads excluded:** the 3 historical `sent` claims (Run #1/Run #5) block any new claim
+- **Delivery claims attempted via send path:** 0 (Telegram disabled → `send_lead_cards` returns before claiming)
+- **Claims rejected because previously sent:** 3 — verified independently against the warm DB:
+  `claim_delivery` on each historical `sent` post_id returned **False** (fail closed, zero Telegram)
+- **Telegram cards sent:** **0** · **Telegram HTTP calls made:** **0** (flag false; summary not requested)
+- **Current-run cost:** $0.095 (the single charged run) · **Monthly accumulated:** $0.972 (was $0.877, +$0.095) · Remaining to $4.75 stop: **$3.778**
+- **Apify runs this month:** 126 (was 125)
+
+### Classifications after v0.6.3 (agent/broker hardening observed)
+- `agent_broker` leads in DB: **17** (incl. the new `3904711568663843283` "offering" post and prior
+  broker posts). None are `hot_lead`/`qualified_lead` → none Telegram-eligible.
+- The new `qualified_lead`/`70` (`3941560907163971532`, seeking, 2BR, 30jt/month, BSD-area tentative
+  match `HSE-SS-FEDORA-2P1-001`) is the only new eligible lead; it was **not** delivered because
+  `RDSA_TELEGRAM_SEND_ENABLED=false`.
+
+### Primary validation goals — outcome
+1. Existing post_ids not in `new_post_ids` ✅ (17 duplicates excluded; only 3 new in 2nd run)
+2. Refreshed `last_seen` not counted new ✅ (0 re-added from the 17 duplicates)
+3. Historical alerts block atomic claims ✅ (3 `sent` claims → `claim_delivery` False)
+4. Agent/broker posts stay `agent_broker` + ineligible ✅ (new broker lead score 0, not eligible)
+5. No historical lead card re-sent ✅ (Telegram off; claims block any attempt)
+6. Zero new eligible with Telegram off → zero messages incl. no summary ✅ (0 cards, 0 HTTP)
+7. Both live flags return false afterward ✅ (`APIFY_LIVE_ENABLED=false`, `RDSA_TELEGRAM_SEND_ENABLED=false`)
+
+### Safety / integrity
+- No Apify paid retry, no author contact, no scheduler/cron ✅
+- `.env` unchanged (flags set in-process only) ✅
+- Historical alerts/leads untouched (read-only claim check; 3 `sent` claims still present) ✅
+- No synthetic inventory; 3 real inventory rows used for matching ✅
+- Working tree: only this PILOT_LOG append (no production code modified) ✅
+
+**Note on the expected `new_post_ids=0` case:** that expectation was conditional on "the same historical
+posts return." Apify returned 12 genuinely-new posts this run, so the absolute-zero case did not apply;
+the newness mechanism itself is validated (duplicates excluded, no re-insertion). Zero Telegram cards is
+**not** a failure — it is the correct fail-closed behavior with the send flag disabled.
+
