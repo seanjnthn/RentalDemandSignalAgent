@@ -49,6 +49,16 @@ def _json(value: Any, fallback: Any) -> Any:
         return fallback
 
 
+def _truthy(value: Any) -> bool:
+    """Consistent boolean coercion mirroring apify_provider._truthy.
+
+    config.APIFY_LIVE_ENABLED is a STRING ('false'/'true'), so a bare bool()
+    would wrongly treat 'false' as True. This keeps the dashboard flag display
+    aligned with the real live-gating logic (and never imports network clients).
+    """
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def sanitize(value: Any, fallback: str = "") -> str:
     text = str(value or fallback)
     text = re.sub(r"(?:\+62|0\d{8,}|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})", "[redacted]", text)
@@ -220,3 +230,42 @@ def get_pilot_runs(log_path: str | Path | None = None, db_path: str | Path = DEF
         apify_cost = float(cost_m.group(1)) if cost_m else None
         runs.append({"run": int(number.group(1)), "raw": metric("Raw posts|Raw"), "normalized": metric("Normalized"), "duplicates": metric("Duplicates|Dup"), "new": metric("New leads|New"), "unknown_location": metric("unknown-location leads|unknown location"), "apify_cost": apify_cost, "text": section[:1000]})
     return runs
+
+def get_scheduler_status(db_path: str | Path = DEFAULT_DB) -> dict[str, Any]:
+    """Read-only scheduler observability snapshot for the dashboard.
+
+    Never exposes tokens, chat IDs, .env values, Windows usernames, or full paths.
+    """
+    from . import scheduler as S, config
+    from .scheduler import SchedulerLock, latest_run, last_successful_run
+    try:
+        c = _conn(db_path)
+    except Exception:
+        return {"code_readiness": "unknown", "error": "db_unavailable"}
+    lock = SchedulerLock()
+    lock_status = lock.status()
+    lock_status.pop("hostname", None)
+    latest = latest_run(c)
+    last_ok = last_successful_run(c)
+    def _clean(row):
+        if not row: return None
+        row = dict(row)
+        row.pop("run_id", None)
+        row.pop("actor_run_id", None)
+        row.pop("process_id", None)
+        row["sanitized_error"] = sanitize(row.get("sanitized_error")) if row.get("sanitized_error") else None
+        return row
+    return {
+        "code_readiness": "ready",
+        "scheduler_enabled": bool(config.SCHEDULER_ENABLED),
+        "scheduler_send_enabled": bool(config.SCHEDULER_SEND_ENABLED),
+        "apify_live_enabled": _truthy(config.APIFY_LIVE_ENABLED),
+        "telegram_send_enabled": bool(config.TELEGRAM_SEND_ENABLED),
+        "monthly_usage_usd": float((S.read_usage_safe().get("actual_usd") or 0)),
+        "stop_usd": float(config.APIFY_STOP_USD),
+        "warn_usd": float(config.APIFY_WARN_USD),
+        "lock": lock_status,
+        "latest_run": _clean(latest),
+        "last_successful_run": _clean(last_ok),
+    }
+

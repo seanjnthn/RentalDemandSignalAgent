@@ -192,6 +192,10 @@ def main(argv=None):
     t=sub.add_parser('telegram-test'); t.add_argument('--confirm-send',action='store_true')
     ps=sub.add_parser('pilot-send'); ps.add_argument('--confirm-send',action='store_true'); ps.add_argument('--summary',action='store_true',help='send a concise run summary when zero new eligible leads (off by default)')
     l=sub.add_parser('list');l.add_argument('--class',dest='klass'); st=sub.add_parser('status');st.add_argument('post_id');st.add_argument('new_status');sub.add_parser('match');sub.add_parser('notify');sub.add_parser('reprocess');sub.add_parser('purge')
+    sr=sub.add_parser('scheduled-run'); sr.add_argument('--confirm-scheduled-run',action='store_true',help='explicit confirmation required to execute a scheduled run')
+    sr.add_argument('--trigger-type',choices=['manual','scheduled_canary','daily_schedule'],default='daily_schedule')
+    ss=sub.add_parser('scheduler-status')
+    su=sub.add_parser('scheduler-unlock'); su.add_argument('--confirm-unlock',action='store_true',help='explicit confirmation required to clear a lock')
     a=p.parse_args(argv); c=connect(config.DB_PATH)
     if a.cmd=='init-db': print(f'Database initialized: {config.DB_PATH}')
     elif a.cmd=='scan': run_scan(a)
@@ -201,5 +205,27 @@ def main(argv=None):
     elif a.cmd=='list':
         q='SELECT post_id,lead_class,lead_score,status,author_username FROM leads'; rows=c.execute(q+(' WHERE lead_class=?' if a.klass else ''),((a.klass,) if a.klass else ())).fetchall(); [print(dict(r)) for r in rows]
     elif a.cmd=='status': set_status(c,a.post_id,a.new_status); print('Status updated')
+    elif a.cmd=='scheduled-run':
+        from .scheduler import run_scheduled_run
+        report = run_scheduled_run(a)
+        print(json.dumps(report, indent=2, default=str))
+    elif a.cmd=='scheduler-status':
+        from .scheduler import SchedulerLock, latest_run, last_successful_run, read_usage_safe
+        lock = SchedulerLock()
+        status = {"lock": lock.status(),
+                  "latest_run": latest_run(c),
+                  "last_successful_run": last_successful_run(c),
+                  "scheduler_enabled": config.SCHEDULER_ENABLED,
+                  "scheduler_send_enabled": config.SCHEDULER_SEND_ENABLED,
+                  "apify_live_enabled": config.APIFY_LIVE_ENABLED,
+                  "telegram_send_enabled": config.TELEGRAM_SEND_ENABLED,
+                  "monthly_usage_usd": read_usage_safe(),
+                  "stop_usd": config.APIFY_STOP_USD}
+        print(json.dumps(status, indent=2, default=str))
+    elif a.cmd=='scheduler-unlock':
+        from .scheduler import SchedulerLock
+        lock = SchedulerLock()
+        ok = lock.force_unlock(confirm=getattr(a, "confirm_unlock", False))
+        print(json.dumps({"unlocked": ok, "lock": lock.status()}, indent=2, default=str))
     elif a.cmd=='purge': c.execute('DELETE FROM leads');c.execute('DELETE FROM alerts');c.commit();print('Purged leads and alerts')
 if __name__=='__main__': main()

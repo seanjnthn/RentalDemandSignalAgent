@@ -32,6 +32,9 @@ data/inventory_adapted.csv
 data/*dryrun*.sqlite3
 data/apify_usage.json
 
+# Scheduler runtime dir (process lock file). Never commit runtime state.
+runtime/
+
 .pytest-temp*/
 
 .codex_v062.md
