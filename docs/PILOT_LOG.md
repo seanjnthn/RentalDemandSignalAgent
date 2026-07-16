@@ -582,3 +582,74 @@ seekers, ambiguous/discussion controls, Run #7 post reprocess, no regression to 
 Final: **175 passed** · no live calls · no DB wipe · historical alerts/claims unchanged · both live
 flags false · no cron.
 
+---
+
+## Run #8 — controlled live validation pilot (2026-07, v0.6.4, WITH delivery)
+
+Controlled live validation of the v0.6.4 supply-side/offering classifier on public Threads posts.
+One batched Apify Actor run, four short queries (`cari apartemen BSD`, `apartemen Gading Serpong`,
+`rumah sewa Tangerang Selatan`, `kontrakan Tangerang`), live delivery enabled in-process only
+(`RUN8_CONFIRM_SEND=1`); `.env` never modified; no Apify retry; no author contact.
+
+### A. Scan
+- **Actor runs:** 1 (charged; `apify_usage.json` `runs` 136 → 139)
+- **Raw posts:** 5 · **Normalized:** 5 · **Existing (refreshed):** 3 · **Genuinely new:** 2
+- **new_post_ids count:** 2
+- **Target-area new leads:** 2 · **Unknown-location new leads:** 0
+
+### B. Classification
+- **Offering/supply-side:** 1 (`3926421766557252585`, `agent_broker`/13, `offering_supply: jadwal viewing`)
+- **Third-party agent/broker:** 0 (the supply post is owner-listing, not sourcing)
+- **Genuine demand:** 1 (`3938791818913207494`, `qualified_lead`/73, `genuine_seeker`)
+- **Class counts:** `agent_broker` 1, `qualified_lead` 1
+- **Classifier reasons:** `offering_supply: jadwal viewing`; `genuine_seeker`
+- **False positives in manual review:** 0 (v0.6.4 correctly separated offering from demand)
+
+### C. Extraction
+- **Budget confidence:** high (1 lead with budget)
+- **Periods:** monthly 1, yearly 0, unknown 1 (the supply post has no budget)
+- **Unclear budgets:** 1 (the agent_broker post)
+- **Structured bedrooms:** eligible lead bedrooms not stated → left `None` (not invented); supply post has 2BR in text but classified broker
+- **Extraction defects:** none observed
+
+### D. Matching (real inventory only, 3 rows)
+- **Exact:** 0 · **Nearby:** 0 · **Tentative:** 0 · **No match:** 3 (all 3 real rows surfaced as no_match)
+- **Real property IDs:** `APT-GS-MTOWN-1BR-001`, `KSK-BSD-INTERMODA-001`, `HSE-SS-FEDORA-2P1-001`
+- **Commercial reasonableness:** eligible lead budget 1.5M/month is below the only Gading Serpong 1BR
+  inventory (APT-GS-MTOWN-1BR-001 at 2.9M/month) → no budget-aligned match; genuine demand, worth
+  contacting to confirm budget flexibility. Supply post is an offering, correctly excluded.
+
+### E. Telegram
+- **New eligible leads:** 1 (`qualified_lead`)
+- **Delivery claims attempted:** 1 (atomic claim before send)
+- **Claims accepted:** 1 (`status=sent`, message_id + sent_at recorded) · **Claims rejected:** 0 this run
+- **Cards sent:** **1** (≤3 cap) · **Telegram HTTP calls:** 1 · **Message ID:** 26
+- **Offline second-claim (exactly-once):** rejected (False) — no second alert/record, zero extra HTTP
+- **No lead sent twice** ✅
+
+### F. Cost
+- **Current-run usageTotalUsd:** not itemized separately in `apify_usage.json` (monthly `actual_usd` only)
+- **Monthly accumulated:** $1.123 (was $1.076 before Run #8; `runs` 136 → 139)
+- **Remaining to $4.75 stop:** $3.627
+- **Cost per genuinely new lead:** not recorded (per-run charge not itemized)
+- **Cost per new eligible lead:** not recorded
+- **Cost per delivered lead:** not recorded
+
+### G. Dashboard review
+| post_id | class/score | genuine / FP / uncertain | worth contacting | status | note | audit | match |
+|---|---|---|---|---|---|---|---|
+| 3938791818913207494 | qualified_lead/73 | genuine | yes (confirm budget) | reviewed | yes (646 chars) | yes (source=dashboard) | all no_match |
+| 3926421766557252585 | agent_broker/13 | supply-side (correct) | no | rejected | yes (232 chars) | yes (source=dashboard) | n/a |
+
+No author contacted. `reviewed_at` populated; audit records created with `source=dashboard`.
+Source text, extracted data, classification, score, matches, msg 26, alerts (3), and delivery_claims
+(7) remain unchanged.
+
+### H. Safety / integrity
+- `APIFY_LIVE_ENABLED=false` · `TELEGRAM_SEND_ENABLED=false` (restored in-process after send) ✅
+- No cron/scheduler ✅ · No author contact ✅ · No secrets/config modified ✅
+- Historical records preserved (alerts 3, delivery_claims 7) ✅
+- Temporary Run #8 drivers (`run8_driver.py`, `run8_deliver.py`) deleted ✅
+- 175-test suite passed (re-run after append) ✅
+- Working tree changed only by this PILOT_LOG append ✅
+
