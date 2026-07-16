@@ -552,11 +552,89 @@ regression to v0.6.3 third-party controls. Full suite: **175 passed** (150 + 25)
 delivered) → new `agent_broker`/~40 (reason `offering_supply: sewakan`), Telegram-ineligible, zero
 cards. Historical delivery claim (message ID 25) and `alerts`/`delivery_claims` rows unchanged.
 
+### 8.13. v0.7 daily scheduler foundation (built, offline-validated, merged)
+
+Safe, **read-only-by-default** daily-scheduler foundation. It ships the scheduler
+engine, CLI controls, a read-only dashboard page, and Windows Task Scheduler scripts
+— but **does NOT activate any schedule and installs no Windows task**.
+
+**Defaults (all OFF — nothing runs or sends automatically):**
+- `RDSA_SCHEDULER_ENABLED=false` (the run refuses unless explicitly `true`)
+- `RDSA_SCHEDULER_SEND_ENABLED=false` (delivery suppressed even when a run executes)
+- `APIFY_LIVE_ENABLED=false` (no live Apify; gated behind preflight + in-process flag)
+- `RDSA_TELEGRAM_SEND_ENABLED=false` (no Telegram send)
+- A scheduled run additionally requires the explicit `--confirm-scheduled-run` flag;
+  without it the CLI refuses.
+
+**What is built (`rdsa/scheduler.py` + `rdsa/cli.py`):**
+- `run_scheduled_run(trigger_type, send_enabled_override)`: acquires the process lock,
+  records a run-ledger row (`scheduled_runs` table), validates inventory, checks the
+  projected-cost hard stop, runs the real `process_raw` pipeline (extract→score→classify
+  →dedup→persist→atomic delivery claim), sends ≤3 cards only when sending is enabled,
+  then **restores flags and releases the lock** on completion **or** error.
+- **Process-lock behavior:** a `scheduler_lock` row blocks concurrent runs
+  (`blocked_lock`); a normal run releases its lock on completion/error. Stale locks are
+  **not** auto-deleted — inspect with `scheduler-status`, clear only explicitly via
+  `scheduler-unlock --confirm-unlock` and never while a process is alive.
+- **Run-ledger behavior:** every run writes a row with status
+  `completed` / `completed_no_new_leads` / `completed_no_eligible_leads` /
+  `blocked_cost_limit` / `blocked_lock` / `failed` (with `error_code` +
+  redacted `sanitized_error`). Historical `leads`/`alerts`/`delivery_claims` are never
+  modified by a run.
+- **Projected-cost hard stop:** projected monthly usage = current monthly + configured
+  max run cost; the run aborts **before Apify** if projected exceeds `APIFY_STOP_USD`.
+  Warning threshold logs only.
+- **No automatic paid retry:** an Apify/provider failure records a `failed`/`apify_error`
+  ledger row and returns — no retry loop.
+- **No automatic Telegram retry:** a Telegram failure leaves the lead persisted and the
+  delivery claim marked `failed` (auditable); `send_lead_cards` already claimed before
+  the network call, so no duplicate send and no retry.
+
+**CLI:** `scheduler-status` (read-only), `scheduler-unlock --confirm-unlock`
+(confirm-gated), `scheduled-run --confirm-scheduled-run` (refuses unless scheduler
+enabled + confirmed).
+
+**Dashboard:** `dashboard/pages/7_Scheduler.py` is **read-only observability** — shows
+code readiness, the four flags, cost posture, process lock, latest/last-successful run.
+**No run / install / unlock / send / enable buttons** are exposed.
+
+**Windows Task Scheduler scripts (`scripts/`):** `windows_scheduler_preview.ps1`
+(no-op preview), `_install.ps1` (`-ConfirmInstall`, **Disabled by default**, `-Enable`
+opt-in), `_disable.ps1` (`-ConfirmDisable`), `_remove.ps1` (`-ConfirmRemove`),
+`_status.ps1`. All pass only `--confirm-scheduled-run` in the task action — **no token,
+chat-id, or secret is embedded**; the task name `RentalDemandSignalAgent-Daily` is
+consistent across all five. These are operator-run out-of-band; **v0.7 ships none of
+them installed.**
+
+**Manual activation procedure (operator, post-release):**
+1. Set `RDSA_SCHEDULER_ENABLED=true` in `.env` (add `RDSA_SCHEDULER_SEND_ENABLED=true`
+   only when delivery is wanted).
+2. Preview, then install Disabled: `pwsh scripts/windows_scheduler_install.ps1
+   -ConfirmInstall -TriggerMode Daily -At "08:30"`.
+3. Enable only after a successful canary review (`-Enable`).
+4. Verify with `windows_scheduler_status.ps1`.
+
+**Windows process cleanup note (Streamlit review/demo):**
+Stopping the parent shell/wrapper may not stop the child `python -m
+streamlit.web.bootstrap` process. Operators should verify the listening port
+(`Get-NetTCPConnection -LocalPort <port>`) and terminate the actual child process
+(`taskkill /PID <pid> /F`) when necessary.
+
+**Tests:** PHASE 10 `tests/test_scheduler.py` (33), PHASE 11 `tests/test_scheduler_canary.py`
+(5, mocks-only offline canaries), plus a `dashboard_repository` flag-coercion regression
+test. Full suite: **214 passed** (PYTHONPATH unset). Two PHASE 12 blocking defects found
+and fixed: `windows_scheduler_preview.ps1` parse error; dashboard `Apify live` flag showed
+`"on"` because `bool("false")` is `True` (now uses the truthy helper, consistent with the
+live-gating logic).
+
+**Rollback tag:** `v0.7-daily-scheduler-foundation`.
+
 ## 11. Rollback
 
-Four safe tags exist:
+Safe tags exist:
 ```bash
 git checkout v0.6.4-offering-classifier-hardening   # detached HEAD at merged offering/supply hardening
+git checkout v0.7-daily-scheduler-foundation   # detached HEAD at merged v0.7 scheduler foundation
 git checkout v0.6.3-delivery-classifier-hardening   # detached HEAD at merged hardening
 git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix

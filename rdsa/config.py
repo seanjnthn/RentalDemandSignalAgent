@@ -54,3 +54,30 @@ APIFY_QUERIES = ["cari apartemen BSD", "butuh apartemen BSD", "cari apartemen Al
 APIFY_USAGE_PATH = os.getenv("APIFY_USAGE_PATH", str(ROOT / "data" / "apify_usage.json"))
 BUDGET_PLAUSIBLE_MIN = int(os.getenv("RDSA_BUDGET_PLAUSIBLE_MIN", "500000"))
 BUDGET_PLAUSIBLE_MAX = int(os.getenv("RDSA_BUDGET_PLAUSIBLE_MAX", "500000000"))
+
+# ---------------------------------------------------------------------------
+# v0.7 — Safe daily scheduler foundation (kill switches default to OFF)
+# ---------------------------------------------------------------------------
+# Both scheduler kill switches default to FALSE. Scheduled execution refuses to
+# run unless RDSA_SCHEDULER_ENABLED=true AND an explicit CLI confirmation flag
+# is supplied. Telegram delivery during a scheduled run additionally requires
+# RDSA_SCHEDULER_SEND_ENABLED=true. Existing APIFY_LIVE_ENABLED / RDSA_TELEGRAM_SEND_ENABLED
+# remain unchanged; live execution is enabled in-process only after preflight.
+SCHEDULER_ENABLED = os.getenv("RDSA_SCHEDULER_ENABLED", "false").strip().lower() == "true"
+SCHEDULER_SEND_ENABLED = os.getenv("RDSA_SCHEDULER_SEND_ENABLED", "false").strip().lower() == "true"
+# Conservative overall timeout for a scheduled run (seconds). No automatic retry on timeout.
+SCHEDULER_TIMEOUT_SECONDS = int(os.getenv("RDSA_SCHEDULER_TIMEOUT_SECONDS", "900"))
+# Git-ignored runtime directory for the cross-process lock file.
+RUNTIME_DIR = os.getenv("RDSA_RUNTIME_DIR", str(ROOT / "runtime"))
+LOCK_PATH = os.path.join(RUNTIME_DIR, "scheduler.lock")
+# Configurable approved query set (data, not duplicated logic).
+SCHEDULER_QUERIES = [
+    "cari apartemen BSD",
+    "apartemen Gading Serpong",
+    "rumah sewa Tangerang Selatan",
+    "kontrakan Tangerang",
+]
+SCHEDULER_MAX_PER_QUERY = int(os.getenv("RDSA_SCHEDULER_MAX_PER_QUERY", "5"))
+SCHEDULER_MAX_TOTAL = int(os.getenv("RDSA_SCHEDULER_MAX_TOTAL", "20"))
+SCHEDULER_MAX_CHARGE_USD = float(os.getenv("RDSA_SCHEDULER_MAX_TOTAL_CHARGE_USD", "0.10"))
+

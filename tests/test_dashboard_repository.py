@@ -52,3 +52,26 @@ def test_status_notes_and_audit_are_parameterized(tmp_path):
 def test_matching_groups_have_stable_labels(tmp_path):
     path = tmp_path / "groups.sqlite3"; seed(path, [{"property_id": "APT-GS-MTOWN-1BR-001", "match_type": "tentative_match", "score": 1, "reasons": [], "warnings": ["confirm"]}])
     assert get_matching_groups(path)["tentative_match"][0]["match"]["match_type"] == "tentative_match"
+
+
+def test_scheduler_status_flag_coercion_and_no_secrets(tmp_path, monkeypatch):
+    # APIFY_LIVE_ENABLED is a STRING ('false'/'true'); the dashboard must
+    # report it consistently with the real live-gating truthy() helper.
+    from rdsa.dashboard_repository import get_scheduler_status, _truthy
+    import rdsa.config as config
+    monkeypatch.setattr(config, "APIFY_LIVE_ENABLED", "false")
+    monkeypatch.setattr(config, "SCHEDULER_ENABLED", False)
+    monkeypatch.setattr(config, "SCHEDULER_SEND_ENABLED", False)
+    monkeypatch.setattr(config, "TELEGRAM_SEND_ENABLED", False)
+    st = get_scheduler_status(tmp_path / "sched.sqlite3")
+    assert st["apify_live_enabled"] is False
+    assert st["scheduler_enabled"] is False
+    assert st["scheduler_send_enabled"] is False
+    assert st["telegram_send_enabled"] is False
+    # 'true' string must still read as on (symmetry with gating logic).
+    monkeypatch.setattr(config, "APIFY_LIVE_ENABLED", "true")
+    assert _truthy(config.APIFY_LIVE_ENABLED) is True
+    # Sanitized snapshot exposes neither run id, host, nor tokens.
+    blob = json.dumps(st, default=str).lower()
+    assert "run_id" not in blob and "hostname" not in blob
+    assert "token" not in blob and "chat" not in blob
