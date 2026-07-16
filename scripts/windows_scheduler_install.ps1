@@ -10,6 +10,9 @@ the task command. Idempotent: re-running does not duplicate the task.
 
 REQUIRES explicit -ConfirmInstall, an explicit -At time, and a trigger mode.
 Task is created Disabled unless -Enable is also supplied.
+
+Recommendation: run from a PowerShell prompt (not git-bash). Pass -RepoRoot explicitly
+if the script location cannot be derived.
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
@@ -18,23 +21,34 @@ param(
     [string]$TriggerMode,
 
     [Parameter(Mandatory = $true)]
-    [string]$At,  # e.g. "08:30"
+    [string]$At,  # e.g. "08:30" (host local time)
 
     [string]$TaskName = 'RentalDemandSignalAgent-Daily',
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')),
+    [string]$RepoRoot = '',  # empty => derive from script location; abort if unresolvable
     [switch]$ConfirmInstall,
     [switch]$Enable  # separate explicit enable; default task is Disabled
 )
+
+$ErrorActionPreference = 'Stop'
+$script:ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $script:ScriptDir 'scheduler_common.ps1')
+
+$RepoRoot = Get-RepoRoot -ExplicitRepoRoot $RepoRoot
+Show-TimezonePreflight
+
+# Resolve the Python executable that the task WOULD use (read-only; never bare 'python').
+# Done before the install guard so the operator sees exactly what will run, and so
+# preview and install are provably driven by the same resolver.
+$python = Resolve-PythonExecutable -RepoRoot $RepoRoot
+Write-Host "Using Python exe : $python" -ForegroundColor Cyan
 
 if (-not $ConfirmInstall) {
     Write-Error "Refusing to install. Re-run with -ConfirmInstall, -At '<HH:MM>', and a trigger mode."
     exit 1
 }
 
-$python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
-if (-not (Test-Path $python)) { $python = 'python' }
 $repoRootNative = (Resolve-Path $RepoRoot).Path
-$actionArgs = " -m rdsa.cli scheduled-run --confirm-scheduled-run --trigger-type $TriggerMode"
+$actionArgs = "-m rdsa.cli scheduled-run --confirm-scheduled-run --trigger-type $TriggerMode"
 
 # Idempotent: remove any existing task with the same name first.
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -43,6 +57,7 @@ if ($existing) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
+# Use the absolute interpreter so the task does not depend on the scheduler user's PATH.
 $action = New-ScheduledTaskAction -Execute $python -Argument $actionArgs -WorkingDirectory $repoRootNative
 if ($TriggerMode -eq 'Daily') {
     $trigger = New-ScheduledTaskTrigger -Daily -At $At
