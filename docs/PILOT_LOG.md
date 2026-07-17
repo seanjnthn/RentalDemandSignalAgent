@@ -947,3 +947,25 @@ terminated mid-run (the prior successful Run #9 executed on a different session/
 **Decision:** stopped after one invocation per protocol. No retry, no second start, no code change,
 no commit. Re-attempt only on a host where the scheduled child process survives to completion.
 
+### v0.7.4 follow-up (offline recovery tooling; Run #10 left UNRECONCILED)
+
+Run #10's orphaned `starting` row motivated v0.7.4 (interrupted-run recovery). The patch adds the
+explicit `interrupted` terminal status, idempotent phase/heartbeat metadata
+(`current_phase`/`heartbeat_at`/`interruption_reason`), fail-closed detection
+(`detect_interrupted_runs`: dead PID + no active lock + past grace — never age-alone), and an explicit
+`python -m rdsa.cli scheduler-reconcile --run-id <RUN_ID> --confirm-reconcile` command. A new scheduled
+run **refuses before Apify** while any unresolved non-terminal run exists. The Scheduler dashboard shows
+candidates read-only with **no reconcile button**.
+
+**Read-only inspection of Run #10 (this milestone, not reconciled):**
+- `status=starting`, `current_phase=None`, `heartbeat_at=None`, `process_id=27332` (**dead**).
+- A stale `runtime/scheduler.lock` references this run_id but its PID is dead → treated as a stale (not
+  active) lock, so it does not block detection.
+- As of inspection the run was ~105 min old (past the 1-hour grace) and the PID is dead, so it now
+  **qualifies** as an interruption candidate.
+- Reconciliation would change **only** `status → interrupted`, `finished_at → <now>`,
+  `interruption_reason → <sanitized>`; leads (127), alerts (3), delivery_claims (7), and monthly usage
+  ($1.199) are untouched.
+- **Run #10 remains UNRECONCILED** — no `scheduler-reconcile` was executed; the stale lock was left
+  intact. Reconcile only on explicit operator instruction.
+

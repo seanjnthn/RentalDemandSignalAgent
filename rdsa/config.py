@@ -80,4 +80,32 @@ SCHEDULER_QUERIES = [
 SCHEDULER_MAX_PER_QUERY = int(os.getenv("RDSA_SCHEDULER_MAX_PER_QUERY", "5"))
 SCHEDULER_MAX_TOTAL = int(os.getenv("RDSA_SCHEDULER_MAX_TOTAL", "20"))
 SCHEDULER_MAX_CHARGE_USD = float(os.getenv("RDSA_SCHEDULER_MAX_TOTAL_CHARGE_USD", "0.10"))
+# Conservative grace period before a non-terminal scheduled run may be treated
+# as interruption-candidate. The process must first be verifiably dead AND have
+# no active matching lock. Age alone (started_at beyond grace) is NEVER enough.
+SCHEDULER_INTERRUPTION_GRACE_SECONDS = int(os.getenv("RDSA_SCHEDULER_INTERRUPTION_GRACE_SECONDS", "3600"))
+
+# ---------------------------------------------------------------------------
+# v0.7.4 — Interrupted run recovery status set
+# ---------------------------------------------------------------------------
+# Terminal-but-unresolved states that must NEVER be auto-retried and are never
+# treated as "completed" or eligible for automatic retry. `interrupted` is the
+# explicit auditable terminal status for an OS/process kill mid-run.
+RUN_STATUS_INTERRUPTED = "interrupted"
+# Non-terminal states: a run is only "unresolved" (reconciliation candidate) if
+# its status is in this set AND it has no terminal finished_at.
+RUN_STATUS_NON_TERMINAL = (
+    "starting", "preflight", "actor_started", "actor_completed",
+    "persistence", "delivery", "cleanup",
+)
+# Terminal states that are NOT interruption (already resolved; refuse reconcile).
+RUN_STATUS_TERMINAL_RESOLVED = (
+    "completed", "completed_no_new_leads", "completed_no_eligible_leads",
+    "failed", "blocked_cost_limit", "blocked_lock", "refused",
+)
+# Major lifecycle phases recorded in current_phase at each stage.
+RUN_PHASES = (
+    "starting", "preflight", "actor_started", "actor_completed",
+    "persistence", "delivery", "cleanup",
+)
 

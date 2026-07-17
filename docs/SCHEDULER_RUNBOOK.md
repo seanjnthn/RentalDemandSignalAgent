@@ -1,6 +1,6 @@
-# Scheduler Runbook (v0.7.2)
+# Scheduler Runbook (v0.7.4)
 
-**Release status:** v0.7.2 is merged and tagged, **defaults disabled**. The existing
+**Release status:** v0.7.4 is merged and tagged, **defaults disabled**. The existing
 out-of-band Windows task remains registered but disabled; it was not updated or run by
 this release step. Reinstall/update it separately only after an explicit operator review.
 
@@ -106,8 +106,8 @@ pwsh scripts/windows_scheduler_remove.ps1 -ConfirmRemove
 ```
 
 Then set both kill switches back to `false`. No code change is required to deactivate.
-**Rollback tag:** `v0.7.1-windows-launcher-hardening` (the prior merged launcher
-release). Use `git checkout v0.7.1-windows-launcher-hardening` to inspect or roll back.
+**Rollback tag:** `v0.7.4-interrupted-run-recovery` (annotated). Use
+`git checkout v0.7.4-interrupted-run-recovery` to inspect or roll back.
 
 ## Lock recovery
 
@@ -120,6 +120,28 @@ release). Use `git checkout v0.7.1-windows-launcher-hardening` to inspect or rol
   ```powershell
   python -m rdsa.cli scheduler-unlock --confirm-unlock
   ```
+
+## Interrupted-run recovery (v0.7.4)
+
+If a scheduled run is terminated by the OS mid-run, its ledger row can be left in a
+non-terminal state (e.g. `starting`) with no `finished_at`. Such a row is an
+**interruption candidate** only when ALL hold: its recorded `process_id` is **dead**,
+no **active** scheduler lock belongs to it (a lock whose PID is dead counts as stale,
+not active), and it is **older than the grace period**
+(`RDSA_SCHEDULER_INTERRUPTION_GRACE_SECONDS`, default 3600 s). Age alone is never
+enough, and a run whose process or lock is still active is never flagged.
+
+Detection is read-only (`python -m rdsa.cli scheduler-status` → `interrupted_runs`)
+and the Scheduler dashboard shows the candidate with **no reconcile button**.
+
+**Reconcile explicitly (operator action only) — required before the next scheduled run:**
+```powershell
+python -m rdsa.cli scheduler-reconcile --run-id <RUN_ID> --confirm-reconcile
+```
+This records `status=interrupted` + `finished_at` + a sanitized reason, and never
+touches leads/alerts/delivery_claims/cost data, never calls Apify/Telegram, and is
+idempotent. A new scheduled run **refuses before Apify** while any unresolved
+non-terminal run exists, so operator reconciliation is mandatory (no automatic retry).
 
 ## Cost guard
 
@@ -145,6 +167,7 @@ release). Use `git checkout v0.7.1-windows-launcher-hardening` to inspect or rol
 | Apify error | `failed` (apify_error) | manual retry via manual run after fix |
 | Telegram failure | `failed` (telegram_failure) | leads persist; retry delivery separately |
 | Invalid inventory | `failed` (invalid_inventory) | fix `inventory_real.csv` |
+| **OS-terminated mid-run (orphaned `starting`)** | **non-terminal, no `finished_at`** | **reconcile explicitly:** `scheduler-reconcile --run-id <RUN_ID> --confirm-reconcile`; a new scheduled run refuses until resolved |
 
 ## Safety invariants
 

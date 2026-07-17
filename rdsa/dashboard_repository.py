@@ -267,5 +267,63 @@ def get_scheduler_status(db_path: str | Path = DEFAULT_DB) -> dict[str, Any]:
         "lock": lock_status,
         "latest_run": _clean(latest),
         "last_successful_run": _clean(last_ok),
+        "interrupted_runs": get_interrupted_runs(db_path),
     }
+
+
+def get_interrupted_runs(db_path: str | Path = DEFAULT_DB) -> list[dict[str, Any]]:
+    """Read-only interrupted-run observability for the Scheduler dashboard.
+
+    Returns non-terminal scheduled runs that qualify for reconciliation
+    (reconciliation='required', verified dead PID + no active lock + past grace)
+    as well as runs already reconciled to the explicit `interrupted` terminal
+    state (reconciliation='completed'). NEVER mutates any row, NEVER reads
+    secrets, tokens, chat IDs, or provider responses.
+    """
+    from . import scheduler as S
+    try:
+        c = _conn(db_path)
+    except Exception:
+        return []
+    lock = S.SchedulerLock()
+    out: list[dict[str, Any]] = []
+    seen = set()
+    try:
+        for r in S.detect_interrupted_runs(c, lock=lock):
+            rid = r["run_id"]
+            seen.add(rid)
+            out.append({
+                "run_id": rid,
+                "status": r.get("status"),
+                "current_phase": r.get("current_phase"),
+                "heartbeat_at": r.get("heartbeat_at"),
+                "started_at": r.get("started_at"),
+                "reconciliation": "required",
+                "interruption_reason": None,
+                "process_id": r.get("process_id"),
+            })
+        rows = c.execute(
+            "SELECT run_id, status, current_phase, heartbeat_at, started_at, "
+            "interruption_reason, process_id FROM scheduled_runs "
+            "WHERE status=?", (S.config.RUN_STATUS_INTERRUPTED,)
+        ).fetchall()
+        for r in rows:
+            rid = r["run_id"]
+            if rid in seen:
+                continue
+            out.append({
+                "run_id": rid,
+                "status": r["status"],
+                "current_phase": r["current_phase"],
+                "heartbeat_at": r["heartbeat_at"],
+                "started_at": r["started_at"],
+                "reconciliation": "completed",
+                "interruption_reason": sanitize(r["interruption_reason"]),
+                "process_id": r["process_id"],
+            })
+    except Exception:
+        return []
+    # Most recent first.
+    out.sort(key=lambda x: str(x.get("started_at") or ""), reverse=True)
+    return out
 

@@ -196,6 +196,9 @@ def main(argv=None):
     sr.add_argument('--trigger-type',choices=['manual','scheduled_canary','daily_schedule'],default='daily_schedule')
     ss=sub.add_parser('scheduler-status')
     su=sub.add_parser('scheduler-unlock'); su.add_argument('--confirm-unlock',action='store_true',help='explicit confirmation required to clear a lock')
+    sr2=sub.add_parser('scheduler-reconcile'); sr2.add_argument('--run-id',required=True,help='run_id of the interrupted scheduled run to reconcile')
+    sr2.add_argument('--confirm-reconcile',action='store_true',help='explicit confirmation required to record an interrupted terminal state')
+    sr2.add_argument('--reason',default=None,help='optional sanitized reason (no secrets); auto-derived if omitted')
     a=p.parse_args(argv); c=connect(config.DB_PATH)
     if a.cmd=='init-db': print(f'Database initialized: {config.DB_PATH}')
     elif a.cmd=='scan': run_scan(a)
@@ -227,5 +230,11 @@ def main(argv=None):
         lock = SchedulerLock()
         ok = lock.force_unlock(confirm=getattr(a, "confirm_unlock", False))
         print(json.dumps({"unlocked": ok, "lock": lock.status()}, indent=2, default=str))
+    elif a.cmd=='scheduler-reconcile':
+        from .scheduler import reconcile_run, SchedulerLock
+        lock = SchedulerLock()
+        result = reconcile_run(c, a.run_id, confirm=getattr(a, "confirm_reconcile", False),
+                               lock=lock, reason=getattr(a, "reason", None))
+        print(json.dumps(result, indent=2, default=str))
     elif a.cmd=='purge': c.execute('DELETE FROM leads');c.execute('DELETE FROM alerts');c.commit();print('Purged leads and alerts')
 if __name__=='__main__': main()

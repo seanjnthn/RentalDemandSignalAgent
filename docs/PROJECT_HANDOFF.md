@@ -710,6 +710,94 @@ environment-bound). `git diff --check` clean.
 **Rollback tag:** `v0.7.3-scheduler-quality-hardening` (annotated, points at the `--no-ff` merge of
 `fix/v073-scheduler-quality-hardening` into `main`).
 
+### 8.16. v0.7.4 interrupted-run recovery (offline; merged via fix/v074-interrupted-run-recovery)
+
+Triggered by Run #10 (`sch-20260717T042351Z-a0dbee12`), which was terminated by the OS at
+`status=starting`. The child process was gone, no lock row existed at the time, yet the ledger row had
+**no terminal state** — an orphaned `starting` row. No Apify/Telegram, no historical record mutation,
+no DB wipe, no retry of Run #10.
+
+**Orphaned `starting`-ledger risk.** A scheduled run that dies OS-side between `INSERT` and its
+terminal `UPDATE` leaves a non-terminal row with no completed/failed status. Prior detection had no
+way to distinguish "still running" from "died mid-run," so such a row would silently block nothing and
+never be resolved — and a naive age-only check could wrongly flag a healthy in-flight run.
+
+**Explicit terminal status.** New auditable `interrupted` status (`config.RUN_STATUS_INTERRUPTED`).
+It is terminal (in `is_terminal_status`) and is never treated as `completed`, never eligible for
+automatic retry. Non-terminal set: `starting, preflight, actor_started, actor_completed, persistence,
+delivery, cleanup`.
+
+**Progress metadata (idempotent).** New ledger columns `current_phase`, `heartbeat_at`,
+`interruption_reason` (added via `migrate_ledger` ALTER-if-not-exists, and tolerated when absent on
+pre-patch production schemas). `update_run_progress()` writes `current_phase` + `heartbeat_at` at every
+major stage of `run_scheduled_run` (`starting → preflight → actor_started → actor_completed →
+persistence → delivery → cleanup`) without touching `finished_at` or any secret/provider response.
+
+**Interruption-candidate rules (`detect_interrupted_runs`).** A run qualifies as an interruption
+candidate **only if ALL hold**:
+1. status ∈ non-terminal set;
+2. recorded `process_id` is **not** alive (`_pid_alive` false);
+3. **no active matching lock** belongs to it (lock absent, or the lock's run_id ≠ this run, or the
+   lock's PID is dead → stale, not active);
+4. started_at is **older than the conservative grace period** (`RDSA_SCHEDULER_INTERRUPTION_GRACE_SECONDS`,
+   default 3600).
+
+We **never** infer interruption from age alone, and **never** flag a run whose process is alive or whose
+lock is active. Terminal/resolved rows (`completed`, `failed`, `blocked_*`, `refused`, `interrupted`)
+are never candidates.
+
+**Fail-closed gate (gate 0 in `run_scheduled_run`).** Before any Apify call **and before** acquiring a
+fresh lock, if `detect_interrupted_runs` returns any candidate, the run refuses with an explicit
+message naming the unresolved run(s) and the `scheduler-reconcile` command. This forces operator
+reconciliation and prevents auto-retrying an interrupted Actor attempt. No Apify/Telegram is called.
+
+**Explicit reconciliation command.**
+```bash
+python -m rdsa.cli scheduler-reconcile --run-id <RUN_ID> --confirm-reconcile
+```
+Requirements enforced by `reconcile_run`:
+- explicit `--confirm-reconcile` required (missing → refusal, no mutation);
+- verifies the recorded PID is dead (`_pid_alive` false);
+- verifies no active matching lock belongs to the run;
+- refuses if already terminal (`completed`/`failed`/`interrupted` → idempotent no-op) or if process
+  alive/lock active;
+- records `finished_at` + `interrupted` terminal status + a **sanitized** reason (token/path-stripped);
+- **never** touches `leads`/`alerts`/`delivery_claims`/cost data;
+- **never** calls Apify or Telegram;
+- **idempotent** — a second call on an already-reconciled run reports no mutation.
+
+**No automatic retry.** The interrupted Actor attempt is never re-attempted automatically; recovery is a
+manual, confirmed operator action only.
+
+**Scheduler blocking while unresolved runs exist.** A new scheduled run is blocked before Apify until all
+non-terminal historical runs are explicitly reconciled (or otherwise resolved).
+
+**Dashboard read-only observability.** `dashboard_repository.get_interrupted_runs()` returns, for each
+interrupted/qualifying run: `run_id`, `status`, `current_phase`, `heartbeat_at`, `started_at`,
+`reconciliation` (`required` or `completed`), and a sanitized `interruption_reason`. The Scheduler page
+(`dashboard/pages/7_Scheduler.py`) renders this as a new read-only panel. **No reconcile / run / enable /
+unlock / send button is exposed** — reconciliation remains an explicit CLI operator action only.
+
+**Run #10 status (read-only inspection, not yet reconciled).** `status=starting`, `current_phase=None`
+(recorded before this patch), `heartbeat_at=None`, `process_id=27332` (**dead**). A stale
+`runtime/scheduler.lock` exists referencing this run_id but its PID is dead → treated as a stale (not
+active) lock. As of inspection the run was ~105 min old (past the 1-hour grace) so it now **qualifies**
+as an interruption candidate. Reconciliation would change only: `status → interrupted`, `finished_at →
+<now>`, `interruption_reason → <sanitized>`; leads (127), alerts (3), delivery_claims (7), and monthly
+usage ($1.199) remain untouched. Run #10 remains **unreconciled** pending explicit operator action.
+
+**Tests.** `tests/test_v074_interrupted_run_recovery.py` (25): dead-PID/no-lock/past-grace candidate;
+live-PID refusal; active-lock refusal; age-alone insufficient; missing-confirmation refusal; explicit
+reconciliation → `interrupted`; second reconciliation no-mutation; completed-run refusal; active
+process/lock refusal; reconciliation never calls Apify/Telegram; historical leads/alerts/claims/costs
+unchanged; reason sanitized; new scheduled run blocked while unresolved; dashboard required/completed
+display; read-only `scheduler-status`; idempotent migration; pre-patch-schema (missing columns)
+compatibility. `tests/test_dashboard_repository.py` hardened to isolate the lock. Full suite
+**276 passed, 1 skipped** (env-bound symlink test). `git diff --check` clean.
+
+**Rollback tag:** `v0.7.4-interrupted-run-recovery` (annotated, points at the `--no-ff` merge of
+`fix/v074-interrupted-run-recovery` into `main`).
+
 ## 11. Rollback
 
 Safe tags exist:
@@ -718,6 +806,7 @@ git checkout v0.6.4-offering-classifier-hardening   # detached HEAD at merged of
 git checkout v0.7-daily-scheduler-foundation   # detached HEAD at merged v0.7 scheduler foundation
 git checkout v0.7.1-windows-launcher-hardening # detached HEAD at v0.7.1 launcher hardening
 git checkout v0.7.3-scheduler-quality-hardening # detached HEAD at merged v0.7.3 scheduler quality hardening
+git checkout v0.7.4-interrupted-run-recovery # detached HEAD at merged v0.7.4 interrupted-run recovery
 git checkout v0.6.3-delivery-classifier-hardening   # detached HEAD at merged hardening
 git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix

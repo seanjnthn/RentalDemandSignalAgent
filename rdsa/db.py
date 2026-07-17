@@ -39,7 +39,10 @@ CREATE TABLE IF NOT EXISTS scheduled_runs(
   error_code TEXT,
   sanitized_error TEXT,
   scheduler_send_enabled INTEGER,
-  process_id INTEGER
+  process_id INTEGER,
+  current_phase TEXT,
+  heartbeat_at TEXT,
+  interruption_reason TEXT
 );
 CREATE TABLE IF NOT EXISTS scheduled_run_leads(
   run_id TEXT NOT NULL REFERENCES scheduled_runs(run_id),
