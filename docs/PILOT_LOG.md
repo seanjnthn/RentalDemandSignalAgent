@@ -887,3 +887,63 @@ or check out the parent of the tag to roll back.
 - Full suite **251 passed, 1 skipped** (the skip is the symlink-privilege `test_venv_python_preferred`,
   environment-bound) ✅ · `git diff --check` clean ✅
 
+---
+
+## Run #10 — v0.7.3 ScheduledCanary attempt (2026-07-17, scan-only, INCOMPLETE — environment abort)
+
+Controlled scan-only canary to exercise the v0.7.3 fixes end-to-end through the Windows Task Scheduler
+launcher (`RentalDemandSignalAgent-Daily`, disabled, v0.7.2 process-local action, no send opt-in).
+**The task was started exactly once but the scheduled-run child process was terminated by the sandbox
+before reaching a terminal ledger state.** No code defect was observed; the same `STATUS_CONTROL_C_EXIT`
+(`LastTaskResult 3221225786 = 0xC000013A`) cold-start interrupt pattern was seen on Run #7's first
+attempt. Per protocol the task was **not** re-run and no Apify run was retried.
+
+### Preflight (all green)
+| Check | Result |
+|---|---|
+| Task disabled | ✅ `State:1`, `Enabled=False` |
+| Launcher action | ✅ `powershell.exe … windows_scheduler_run.ps1 -RepoRoot … -TriggerMode scheduled_canary -ConfirmRun` (no token/send, no Daily change) |
+| Scheduler lock absent | ✅ no `scheduler.lock`; `scheduler_lock` table empty |
+| Baselines | runs `1`, leads `127`, alerts `3`, delivery_claims `7`, scheduled_run_leads `0` |
+| Monthly usage before | `$1.195`, 167 runs |
+| Projected max cost | `$1.295` (< stop `$4.75`) ✅ |
+| Four persistent flags | all false ✅ |
+
+### Execution
+- Enabled temporarily → `State:3`; `Start-ScheduledTask` issued **exactly once** at `2026-07-17T11:23:49+07:00` (ledger `started_at 2026-07-17T04:23:51Z`, run_id `sch-20260717T042351Z-a0dbee12`, pid `27332`).
+- Observed `Running`; polled up to ~2.7 min — ledger stayed `status=starting`, `finished_at=None`.
+- Windows `LastTaskResult = 3221225786` (`0xC000013A`, child terminated); child PID `27332` confirmed gone.
+- Disabled immediately after (`State:1`, `Enabled=False`). **No second `Start-ScheduledTask`.**
+
+### Post-run safety verification (after disable)
+| Check | Result |
+|---|---|
+| Task disabled again | ✅ `State:1`, `Enabled=False` |
+| Exactly one Task Scheduler invocation | ✅ only one `starting` ledger row; no second run |
+| Apify Actor requests | `0 charged` — `data/apify_usage.json` unchanged (`$1.195`, 167 runs); the terminated child made no completed paid run |
+| Telegram HTTP calls | `0` — send flags false; alerts `3`→`3`, delivery_claims `7`→`7` |
+| Telegram cards | `0` |
+| Lock acquired/released | child died OS-side; no `scheduler.lock` file and no `scheduler_lock` row → **no stale lock** ✅ |
+| Persistent flags | all false ✅ |
+| Historical records | leads `127`, alerts `3`, delivery_claims `7` unchanged; only a dangling `starting` ledger row added (left untouched for audit — no manual mutation) |
+
+### What could NOT be verified live (and why)
+Because the run did not reach a terminal state, **no new run metrics, new leads, `new_post_ids`,
+`scheduled_run_leads` associations, classifications, or budget parses were produced by this execution.**
+The v0.7.3 fixes were therefore **not exercised on fresh live posts in this run** — they remain
+validated only by the offline read-only reprocess of the four Run #9 leads (§ below) and the 251-test
+suite. A clean live canary requires a host/environment where the scheduled child process is not
+terminated mid-run (the prior successful Run #9 executed on a different session/process context).
+
+### Offline validation that still stands (from Run #9 reprocess, read-only)
+- `3829775294010720778`: `agent_broker`/`NULL` → **`watch`** / `genuine_seeker_override: harga sewa`
+  (family/occupancy seeker NOT blocked by `dikontrakkan`/ambiguous `harga sewa`).
+- `3941710706454888314`: budget `23M–285k/month` → **`25,000,000 / year`** (23m→area, IPL separated).
+- `3934246864783171346`: budget `NULL` → **`1,300,000 / month`** (`Rp.` prefix parsed, high).
+- `3933861953134938990`: `classifier_reason` now persisted; run provenance recoverable via
+  `scheduled_run_leads` with **no timestamp reconstruction** (validated by unit tests + the prior
+  Run #9 `completed` ledger row, which predates this table and remains intact).
+
+**Decision:** stopped after one invocation per protocol. No retry, no second start, no code change,
+no commit. Re-attempt only on a host where the scheduled child process survives to completion.
+
