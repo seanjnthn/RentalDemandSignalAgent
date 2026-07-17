@@ -1,6 +1,7 @@
 from .scoring_config import (
     BROKER_SIGNALS, RENTAL_CONTEXT_SIGNALS, SPAM_SIGNALS, THIRD_PARTY_DEMAND_SIGNALS,
-    GENUINE_SEEKER_CONTROLS, THRESHOLDS, OFFERING_SIGNALS, LISTING_STRUCTURE_SIGNALS,
+    GENUINE_SEEKER_CONTROLS, GENUINE_SEEKER_HOUSEHOLD, THRESHOLDS, OFFERING_SIGNALS,
+    LISTING_STRUCTURE_SIGNALS, STRONG_LISTING_SIGNALS,
 )
 import re as _re
 
@@ -26,6 +27,21 @@ def _detect_broker_cue(text: str):
     return None
 
 
+def _has_strong_listing_proof(text: str) -> bool:
+    """True when the post carries concrete supply-side proof (explicit offering verb,
+    unit ownership/availability, price-with-amount, facilities, or contact CTA). Used to
+    prevent a genuine-seeker override from reclassifying an actual listing.
+
+    A bare ``harga sewa`` with NO following amount is NOT proof: it is the ambiguous
+    first-person phrase ("harga sewanya gak terlalu mehol"), which must not force a
+    listing classification on a genuine seeker.
+    """
+    if any(sig in text for sig in STRONG_LISTING_SIGNALS if sig != "harga sewa"):
+        return True
+    # "harga sewa" only counts as proof when a price amount immediately follows it.
+    return _has_price_amount(text)
+
+
 # Unambiguous supply-side cues: an author ADVERTISING a unit (owner or agent).
 STRONG_OFFERING = (
     "jual", "sewakan", "disewakan", "dijual", "buka opsi",
@@ -35,7 +51,7 @@ STRONG_OFFERING = (
     "sewa unit", "jual unit", "unit dijual", "menerima titip", "agent listing", "broker listing",
     "cari penyewa", "cari tenant", "butuh penyewa",
     "dm untuk detail", "silakan hubungi", "wa untuk info", "boleh dm", "boleh hubungi",
-    "harga sewa",
+    "harga sewa", "dikontrakkan", "dikontrakin",
 )
 # Bare offering verbs: strong EXCEPT when the post is a question/discussion with no
 # unit/price/contact cue (e.g. "ada yang tahu apartemen yang disewakan?").
@@ -94,7 +110,8 @@ def classify(lead):
     offering_cue = _detect_offering_cue(t) or _detect_broker_cue(t)
     strong = any(s in t for s in STRONG_OFFERING) or any(s in t for s in BROKER_SIGNALS) or _unit_price_contact(t)
     structure_score = sum(1 for s in LISTING_STRUCTURE_SIGNALS if s in t)
-    genuine = any(ctrl in t for ctrl in GENUINE_SEEKER_CONTROLS)
+    genuine = (any(ctrl in t for ctrl in GENUINE_SEEKER_CONTROLS)
+               or any(h in t for h in GENUINE_SEEKER_HOUSEHOLD))
     discussion = any(d in t for d in DISCUSSION_MARKERS) or t.rstrip().endswith("?")
 
     # Supply-side when a strong cue is present, or a soft cue backed by listing structure.
@@ -106,14 +123,33 @@ def classify(lead):
         lead.lead_class = _seeker_class(lead)
         lead.classifier_reason = f"discussion_not_offering: {offering_cue or 'listing_structure'}"
         return lead
+    # Genuine-seeker precedence: an explicit first-person occupancy/family context
+    # (the author wants to live there with their household, school, etc.) overrides an
+    # ambiguous offering-form word (e.g. bare "sewa"/"dikontrakkan") — but ONLY when the
+    # post is NOT a clear listing (rental_intent != "offering") and lacks concrete listing
+    # proof (unit ownership/availability, price, facilities, contact CTA). If strong-listing
+    # proof exists, the post stays agent_broker.
+    if is_offering and genuine and lead.rental_intent != "offering" and not _has_strong_listing_proof(t):
+        lead.lead_class = _seeker_class(lead)
+        lead.classifier_reason = (
+            f"genuine_seeker_override: {offering_cue or 'offering_form_word'}"
+            if lead.lead_class in ("hot_lead", "qualified_lead", "watch")
+            else f"genuine_seeker_low_score: {offering_cue or 'offering_form_word'}"
+        )
+        return lead
     if is_offering and not genuine:
         lead.lead_class = "agent_broker"
         lead.classifier_reason = f"offering_supply: {offering_cue or 'listing_structure'}"
         return lead
     if is_offering and genuine:
-        # Explicit current request is seeking but offering language is present.
-        lead.lead_class = _seeker_class(lead)
-        lead.classifier_reason = f"ambiguous_offering_seeker: {offering_cue or 'listing_structure'}"
+        # Offering language with genuine-family phrasing: a real listing (unit/price/
+        # facilities/contact) stays agent_broker; otherwise it is an ambiguous seeker.
+        if _has_strong_listing_proof(t):
+            lead.lead_class = "agent_broker"
+            lead.classifier_reason = f"offering_supply: {offering_cue or 'listing_structure'}"
+        else:
+            lead.lead_class = _seeker_class(lead)
+            lead.classifier_reason = f"ambiguous_offering_seeker: {offering_cue or 'listing_structure'}"
         return lead
 
     # Third-party-demand: author sourcing/placing on behalf of a client (broker/agent).

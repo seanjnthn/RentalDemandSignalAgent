@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS scheduled_runs(
   sanitized_error TEXT,
   scheduler_send_enabled INTEGER,
   process_id INTEGER
+);
+CREATE TABLE IF NOT EXISTS scheduled_run_leads(
+  run_id TEXT NOT NULL REFERENCES scheduled_runs(run_id),
+  post_id TEXT NOT NULL,
+  inserted_this_run INTEGER NOT NULL DEFAULT 0,
+  classification TEXT,
+  eligible INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (run_id, post_id)
 );'''
 def connect(path):
     c=sqlite3.connect(path);c.row_factory=sqlite3.Row;c.executescript(SCHEMA)
@@ -106,3 +115,58 @@ def purge_old_leads(c, days):
         if old: ids.append(row['post_id'])
     if ids: c.executemany('DELETE FROM leads WHERE post_id=?', [(x,) for x in ids]); c.commit()
     return len(ids)
+
+# ---------------------------------------------------------------------------
+# Scheduled-run => lead provenance (v0.7.3)
+# ---------------------------------------------------------------------------
+def migrate_provenance(c) -> None:
+    """Create scheduled_run_leads idempotently. Safe to call repeatedly."""
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS scheduled_run_leads(
+            run_id TEXT NOT NULL REFERENCES scheduled_runs(run_id),
+            post_id TEXT NOT NULL,
+            inserted_this_run INTEGER NOT NULL DEFAULT 0,
+            classification TEXT,
+            eligible INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, post_id))"""
+    )
+    c.commit()
+
+
+def associate_run_leads(c, run_id: str, associations: list[dict]) -> int:
+    """Record every processed lead for a scheduled run (new + already-existing).
+
+    `associations` is a list of dicts with keys: post_id, inserted_this_run (bool),
+    classification (str), eligible (bool). The composite PK (run_id, post_id) makes
+    this idempotent: re-associating the same post for the same run is a no-op.
+    Returns the number of NEW rows inserted. No secrets or raw text are stored.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [
+        (run_id, normalize_post_id(a["post_id"]), int(bool(a.get("inserted_this_run", 0))),
+         a.get("classification"), int(bool(a.get("eligible", 0))), now)
+        for a in associations
+    ]
+    before = c.total_changes
+    c.executemany(
+        "INSERT OR IGNORE INTO scheduled_run_leads"
+        "(run_id, post_id, inserted_this_run, classification, eligible, created_at)"
+        " VALUES(?,?,?,?,?,?)", rows
+    )
+    inserted = c.total_changes - before
+    c.commit()
+    return inserted
+
+
+def leads_for_run(c, run_id: str) -> list[dict]:
+    """Exact, no-timestamp-reconstruction lead association for a run."""
+    return [dict(r) for r in c.execute(
+        "SELECT post_id, inserted_this_run, classification, eligible, created_at "
+        "FROM scheduled_run_leads WHERE run_id=? ORDER BY post_id", (run_id,))]
+
+
+def new_post_ids_for_run(c, run_id: str) -> list[str]:
+    return [r["post_id"] for r in c.execute(
+        "SELECT post_id FROM scheduled_run_leads WHERE run_id=? AND inserted_this_run=1",
+        (run_id,)).fetchall()]

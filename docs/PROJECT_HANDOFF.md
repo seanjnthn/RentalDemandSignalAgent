@@ -664,6 +664,52 @@ parse successfully. No live Apify or Telegram calls were made.
 
 **Rollback tag:** `v0.7.1-windows-launcher-hardening`.
 
+### 8.15. v0.7.3 scheduler quality hardening (offline; merged via fix/v073-scheduler-quality-hardening)
+
+Source fixes for four defects surfaced by the Run #9 ScheduledCanary (`sch-20260717T020147Z-6a5956e5`,
+4 new leads). Offline-verified against the production DB (read-only reprocess); no Apify/Telegram, no
+historical record mutation, no DB wipe.
+
+**A. Genuine-seeker classifier precedence.** A first-person family/school seeker was misclassified
+`agent_broker` because `STRONG_OFFERING` matched the bare substring `harga sewa` (no amount). Fix:
+`GENUINE_SEEKER_HOUSEHOLD` (anak/sekolah/lama nyari/rumah kecil context) recognises genuine demand;
+`STRONG_LISTING_SIGNALS` + `_has_strong_listing_proof()` define real listing proof (bare `harga sewa`
+without an amount is **not** proof); when `rental_intent != "offering"` and there is no strong proof, an
+ambiguous offering-form word is overridden to a seeker (`genuine_seeker_override` / `_low_score`). A real
+listing with strong proof still stays `agent_broker`. `dikontrakkan`/`dikontrakin` added to `STRONG_OFFERING`.
+
+**B. Rent-aware budget extraction.** `23m` was read as IDR 23M; `IPL 285rb` was folded into the rent;
+`25 juta/tahun` was not separated from monthly. `budget_parser.py` rewritten to be role-aware: per-line
+label detection (area / IPL / deposit / rent / service); dimension/area exclusion (`23m`, `12mtr`,
+`3 x 5m` near `luas`/`uk.`/`kamar` are never money); IPL/service/deposit tagged as **separate** non-rent
+charges; explicit `a-b <unit>` range matcher; primary rent selected by period (yearly stored natively).
+New `BudgetResult` fields: `role`, `rent_figure`, `area_text`, `candidates`, `normalized_note`.
+
+**C. `classifier_reason` persistence.** The value was computed but dropped (the `Lead` dataclass lacked
+the field, so `to_dict`/`asdict` omitted it and the SQLite INSERT used a fixed column list). Added
+`classifier_reason: str | None = None` to `Lead`; `to_dict` serialises it; `upsert_lead` writes it. The
+UPSERT refreshes only `last_seen` on conflict, so a meaningful existing reason is never clobbered with `NULL`.
+
+**D. Scheduled-run → lead provenance.** Leads could only be linked to a run via timestamp reconstruction
+of `last_seen`. New `scheduled_run_leads(run_id, post_id, inserted_this_run, classification, eligible,
+created_at, PRIMARY KEY(run_id, post_id))`, created idempotently on `connect()` and via `migrate_provenance`.
+`associate_run_leads(c, run_id, associations)` records **every** processed lead (new + already-existing)
+per run; composite PK makes it idempotent (`INSERT OR IGNORE`). `leads_for_run` / `new_post_ids_for_run`
+recover the exact association with no timestamp reconstruction. No secrets or raw text stored.
+
+**Offline reprocess (read-only):**
+- `3829775294010720778`: `agent_broker`/`NULL` → **`watch`** / `genuine_seeker_override: harga sewa`
+- `3941710706454887314`: budget `23M–285k / month` → budget **`25,000,000 / year`** (23m→area, IPL excluded)
+- `3934246864783171346`: budget `NULL` → **`1,300,000 / month`** (`Rp.` parsed, high)
+- `3933861953134938990`: reason `NULL` → reason persisted
+
+**Tests:** `tests/test_v073_quality_hardening.py` (classifier precedence, budget roles, `classifier_reason`
+persistence, provenance). Full suite **251 passed, 1 skipped** (symlink-privilege `test_venv_python_preferred`,
+environment-bound). `git diff --check` clean.
+
+**Rollback tag:** `v0.7.3-scheduler-quality-hardening` (annotated, points at the `--no-ff` merge of
+`fix/v073-scheduler-quality-hardening` into `main`).
+
 ## 11. Rollback
 
 Safe tags exist:
@@ -671,6 +717,7 @@ Safe tags exist:
 git checkout v0.6.4-offering-classifier-hardening   # detached HEAD at merged offering/supply hardening
 git checkout v0.7-daily-scheduler-foundation   # detached HEAD at merged v0.7 scheduler foundation
 git checkout v0.7.1-windows-launcher-hardening # detached HEAD at v0.7.1 launcher hardening
+git checkout v0.7.3-scheduler-quality-hardening # detached HEAD at merged v0.7.3 scheduler quality hardening
 git checkout v0.6.3-delivery-classifier-hardening   # detached HEAD at merged hardening
 git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix

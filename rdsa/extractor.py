@@ -86,6 +86,7 @@ class Lead:
     rental_duration: str|None = None; special_requirements: list = field(default_factory=list)
     lead_class: str = "irrelevant"; lead_score: int = 0; score_breakdown: list = field(default_factory=list)
     score_version: str = "v1.0"; matched_inventory: list = field(default_factory=list); status: str = "new"; dedup_hash: str = ""
+    classifier_reason: str | None = None
     alerted_at: str|None = None
     budget_confidence: str = "low"; budget_note: str = ""; budget_raw: str = ""
     def to_dict(self): return asdict(self)
@@ -105,8 +106,10 @@ def extract(post, now=None):
     bedroom = parse_bedrooms(text)
     budget = parse_budget(text)
     period = budget.period
-    bmin = budget.monthly_min if period == "year" else budget.min_amount
-    bmax = budget.monthly_max if period == "year" else budget.max_amount
+    # Store the rent in its native period (yearly amounts stay yearly; monthly stay
+    # monthly). monthly_min/max carry the normalized equivalent for display/matching.
+    bmin = budget.min_amount
+    bmax = budget.max_amount
     if budget.confidence not in ("high", "medium"): bmin = bmax = None
     dur = None
     m = re.search(r"(?:sewa|rent(?:al)?)\s*(\d+\s*(?:tahun|year|months?|bulan))", low)
