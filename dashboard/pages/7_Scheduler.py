@@ -81,6 +81,34 @@ else:
              f"finished {last_ok.get('finished_at')}")
 
 st.divider()
+
+st.subheader("Interrupted runs (read-only)")
+interrupted = status.get("interrupted_runs") or []
+if not interrupted:
+    st.success("No interrupted or unresolved scheduled runs detected.")
+else:
+    for rec in interrupted:
+        rid = rec.get("run_id")
+        phase = rec.get("current_phase")
+        hb = rec.get("heartbeat_at")
+        state = rec.get("reconciliation")  # "required" or "completed"
+        reason = rec.get("interruption_reason")
+        if state == "completed":
+            st.warning(f"⚠ Run **{rid}** · status={rec.get('status')} · "
+                       f"last phase={phase} · heartbeat={hb} · "
+                       f"**reconciliation completed**"
+                       + (f" · reason: {reason}" if reason else ""))
+        else:
+            st.error(f"⛔ Run **{rid}** · status={rec.get('status')} · "
+                     f"last phase={phase} · heartbeat={hb} · "
+                     f"**manual reconciliation REQUIRED** (run the CLI "
+                     f"`scheduler-reconcile --run-id {rid} --confirm-reconcile` "
+                     f"out-of-band). No reconcile control is exposed here.")
+    st.caption("This section is strictly read-only. Manual reconciliation is an "
+               "explicit, confirmed CLI operator action and is never triggered "
+               "from the dashboard.")
+
+st.divider()
 st.caption("This page is read-only. To activate a real schedule, an operator must "
            "install a Windows Scheduled Task out-of-band and enable the scheduler kill "
            "switches. No run, enable, send, or unlock controls are exposed here.")

@@ -210,6 +210,15 @@ def migrate_ledger(c) -> None:
             usage_total_usd REAL, monthly_usage_usd REAL, error_code TEXT,
             sanitized_error TEXT, scheduler_send_enabled INTEGER, process_id INTEGER)"""
     )
+    # v0.7.4 — idempotent progress/audit columns (ALTER is a no-op if present).
+    _ledger_cols = {r[1] for r in c.execute("PRAGMA table_info(scheduled_runs)")}
+    for col, definition in (
+        ("current_phase", "TEXT"),
+        ("heartbeat_at", "TEXT"),
+        ("interruption_reason", "TEXT"),
+    ):
+        if col not in _ledger_cols:
+            c.execute(f"ALTER TABLE scheduled_runs ADD COLUMN {col} {definition}")
     c.commit()
 
 
@@ -217,9 +226,24 @@ def record_run_start(c, run_id: str, trigger_type: str, process_id: int, schedul
     now = datetime.now(timezone.utc).isoformat()
     c.execute(
         """INSERT OR REPLACE INTO scheduled_runs(
-            run_id, trigger_type, started_at, status, scheduler_send_enabled, process_id)
-            VALUES(?,?,?, 'starting', ?, ?)""",
-        (run_id, trigger_type, now, int(bool(scheduler_send_enabled)), process_id),
+            run_id, trigger_type, started_at, status, scheduler_send_enabled, process_id,
+            current_phase, heartbeat_at)
+            VALUES(?,?,?, 'starting', ?, ?, 'starting', ?)""",
+        (run_id, trigger_type, now, int(bool(scheduler_send_enabled)), process_id, now),
+    )
+    c.commit()
+
+
+def update_run_progress(c, run_id: str, phase: str) -> None:
+    """Record lifecycle progress (idempotent). Sets current_phase + heartbeat_at.
+
+    Never sets finished_at or any other reconciliation/result field. No secrets
+    or provider responses are stored.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    c.execute(
+        "UPDATE scheduled_runs SET current_phase=?, heartbeat_at=? WHERE run_id=?",
+        (phase, now, run_id),
     )
     c.commit()
 
@@ -247,6 +271,142 @@ def last_successful_run(c) -> dict | None:
         "OR status='completed_no_eligible_leads' ORDER BY finished_at DESC LIMIT 1"
     ).fetchone()
     return dict(row) if row else None
+
+
+def is_terminal_status(status: str) -> bool:
+    """A status is terminal if it is resolved or the explicit interrupted state."""
+    return status in config.RUN_STATUS_TERMINAL_RESOLVED or status == config.RUN_STATUS_INTERRUPTED
+
+
+def _parse_iso(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def detect_interrupted_runs(c, lock: "SchedulerLock | None" = None,
+                            grace_seconds: int | None = None) -> list[dict]:
+    """Return non-terminal scheduled runs that qualify as interruption candidates.
+
+    A run qualifies ONLY when ALL hold:
+      - its status is non-terminal (starting/preflight/.../cleanup); AND
+      - its recorded process_id is NOT alive; AND
+      - no active scheduler lock belongs to it (lock absent or not its run_id); AND
+      - started_at is older than the conservative grace period.
+
+    We NEVER infer interruption from age alone, and we NEVER flag a run whose
+    process is alive or whose lock is active. The lock parameter defaults to a
+    fresh SchedulerLock() so callers may pass a pre-inspected lock in tests.
+    """
+    if grace_seconds is None:
+        grace_seconds = int(config.SCHEDULER_INTERRUPTION_GRACE_SECONDS)
+    lock = lock or SchedulerLock()
+    lock_payload = lock.inspect()
+    lock_run_id = lock_payload.get("run_id") if lock_payload else None
+    lock_pid = int(lock_payload.get("pid", 0)) if lock_payload else 0
+    lock_alive = _pid_alive(lock_pid) if lock_pid else False
+
+    now = datetime.now(timezone.utc)
+    candidates = []
+    rows = c.execute("SELECT * FROM scheduled_runs").fetchall()
+    for row in rows:
+        r = dict(row)
+        status = r.get("status")
+        if status not in config.RUN_STATUS_NON_TERMINAL:
+            # Terminal/resolved rows are never interruption candidates.
+            continue
+        pid = int(r.get("process_id") or 0)
+        if pid and _pid_alive(pid):
+            # Process still running — never treat as interrupted.
+            continue
+        # Lock belongs to this run and is still active → still running, skip.
+        if lock_alive and lock_run_id == r.get("run_id"):
+            continue
+        started = _parse_iso(r.get("started_at"))
+        if started is None:
+            # Unparseable timestamp: cannot safely judge age; require explicit review.
+            continue
+        elapsed = (now - started).total_seconds()
+        if elapsed < grace_seconds:
+            # Too recent — a normal in-flight run. Never infer from age alone.
+            continue
+        candidates.append(r)
+    return candidates
+
+
+def reconcile_run(c, run_id: str, *, confirm: bool, lock: "SchedulerLock | None" = None,
+                  reason: str | None = None) -> dict:
+    """Explicit operator reconciliation of an interrupted scheduled run.
+
+    Requirements enforced:
+      - explicit --confirm-reconcile required;
+      - verifies the recorded PID is dead;
+      - verifies no active matching lock belongs to the run;
+      - refuses if the run is already terminal (completed/failed/etc.) or if its
+        process is still alive or its lock is active;
+      - records finished_at and an explicit `interrupted` terminal status;
+      - stores a sanitized reason (no secrets/responses);
+      - never touches leads, alerts, delivery_claims, or cost data;
+      - never calls Apify or Telegram;
+      - is idempotent: a second call on an already-reconciled run reports no-op.
+
+    Returns a dict describing the outcome (never raises on policy refusal).
+    """
+    lock = lock or SchedulerLock()
+    # Idempotently ensure ledger columns exist (production DBs predating this
+    # migration have the table but lack current_phase/heartbeat_at/
+    # interruption_reason). This is ALTER IF NOT EXISTS only — read-mostly, no
+    # mutation of any row data. Never touches leads/alerts/delivery/cost.
+    migrate_ledger(c)
+    row = c.execute(
+        "SELECT * FROM scheduled_runs WHERE run_id=?", (run_id,)
+    ).fetchone()
+    if row is None:
+        return {"reconciled": False, "reason_refused": "unknown_run",
+                "message": f"Run {run_id} not found in ledger."}
+    r = dict(row)
+    status = r.get("status")
+
+    # Idempotency: already terminal → no mutation.
+    if is_terminal_status(status):
+        return {"reconciled": False, "already_terminal": True,
+                "status": status, "idempotent": True,
+                "message": f"Run {run_id} is already in terminal state '{status}'; no mutation."}
+
+    if not confirm:
+        return {"reconciled": False, "reason_refused": "missing_confirmation",
+                "message": "Reconciliation refused: --confirm-reconcile is required."}
+
+    pid = int(r.get("process_id") or 0)
+    if pid and _pid_alive(pid):
+        return {"reconciled": False, "reason_refused": "process_alive",
+                "message": f"Reconciliation refused: process {pid} is still alive."}
+
+    lock_payload = lock.inspect()
+    lock_run_id = lock_payload.get("run_id") if lock_payload else None
+    lock_pid = int(lock_payload.get("pid", 0)) if lock_payload else 0
+    if _pid_alive(lock_pid) and lock_run_id == run_id:
+        return {"reconciled": False, "reason_refused": "active_lock",
+                "message": f"Reconciliation refused: active scheduler lock for run {run_id}."}
+
+    # Sanitize the operator-supplied / derived reason. Strip secrets/paths.
+    if not reason:
+        last_phase = r.get("current_phase") or "starting"
+        reason = f"Process terminated by OS while status={status}; last known phase={last_phase}."
+    sanitized = sanitize_error(reason)[1]
+    now = datetime.now(timezone.utc).isoformat()
+    c.execute(
+        "UPDATE scheduled_runs SET status=?, finished_at=?, interruption_reason=? "
+        "WHERE run_id=?",
+        (config.RUN_STATUS_INTERRUPTED, now, sanitized, run_id),
+    )
+    c.commit()
+    return {"reconciled": True, "status": config.RUN_STATUS_INTERRUPTED,
+            "finished_at": now, "interruption_reason": sanitized,
+            "process_id": pid, "idempotent": False}
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +479,23 @@ def run_scheduled_run(args) -> dict:
         os.environ.pop("RDSA_TELEGRAM_SEND_ENABLED", None)
         live_restored = True
 
+    # ---- gate 0: fail-closed interruption recovery ----
+    # Before any Apify/Telegram call (and before acquiring a fresh lock), refuse
+    # if there are unresolved non-terminal historical runs. This forces explicit
+    # operator reconciliation and prevents auto-retrying an interrupted Actor
+    # attempt. We never automatically retry or silently resolve the old run.
+    try:
+        interrupted = detect_interrupted_runs(c, lock=lock)
+    except Exception:
+        interrupted = []
+    if interrupted:
+        run_ids = ", ".join(r["run_id"] for r in interrupted)
+        msg = (f"Scheduled run blocked: {len(interrupted)} unresolved non-terminal "
+               f"historical run(s) require explicit operator reconciliation "
+               f"(run scheduler-reconcile --run-id <RUN_ID> --confirm-reconcile): "
+               f"{run_ids}. Refusing before Apify.")
+        return _refuse(msg)
+
     try:
         # ---- gate 2: acquire process lock ----
         if not lock.acquire(run_id):
@@ -328,6 +505,7 @@ def run_scheduled_run(args) -> dict:
             return _refuse(f"Scheduler lock conflict: another run is active (pid={st.get('pid')}). Aborting before Apify.")
         started = True
         record_run_start(c, run_id, trigger_type, os.getpid(), scheduler_send)
+        update_run_progress(c, run_id, "preflight")
 
         # ---- gate 3: inventory validation ----
         rows, inv_report = validate_real_inventory_for_scan(config.INVENTORY_REAL_CSV)
@@ -351,6 +529,7 @@ def run_scheduled_run(args) -> dict:
             return {"status": "blocked_cost_limit", "run_id": run_id, "projected_usd": projected}
 
         # ---- enable live execution in-process only (after all preflight) ----
+        update_run_progress(c, run_id, "actor_started")
         os.environ["APIFY_LIVE_ENABLED"] = "true"
         config.APIFY_LIVE_ENABLED = "true"
         if scheduler_send:
@@ -366,8 +545,10 @@ def run_scheduled_run(args) -> dict:
             max_total_charge_usd=config.SCHEDULER_MAX_CHARGE_USD,
             timeout=config.SCHEDULER_TIMEOUT_SECONDS,
         )
+        update_run_progress(c, run_id, "actor_completed")
         argv = type("A", (), {"pilot": True, "dry_run": True, "summary": False, "confirm_send": False})()
         result = process_raw(raw, "apify", argv, c, inventory_mode="real")
+        update_run_progress(c, run_id, "persistence")
         c.commit()
 
         new_post_ids = result.get("new_post_ids", [])
@@ -390,6 +571,7 @@ def run_scheduled_run(args) -> dict:
         claimed = 0
         sent = 0
         if scheduler_send and eligible:
+            update_run_progress(c, run_id, "delivery")
             notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_ALLOWED_CHAT_ID)
             sent = send_lead_cards(
                 notifier, eligible, c, matching_enabled=True,
@@ -398,6 +580,7 @@ def run_scheduled_run(args) -> dict:
             )
             claimed = sent
 
+        update_run_progress(c, run_id, "cleanup")
         # ---- ledger completion ----
         usage_after = _read_usage()
         if not eligible:

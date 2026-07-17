@@ -63,6 +63,9 @@ def test_scheduler_status_flag_coercion_and_no_secrets(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "SCHEDULER_ENABLED", False)
     monkeypatch.setattr(config, "SCHEDULER_SEND_ENABLED", False)
     monkeypatch.setattr(config, "TELEGRAM_SEND_ENABLED", False)
+    # Make the lock deterministic: point at a temp (absent) lock so the
+    # read-only snapshot can't leak a real run_id/hostname from the live env.
+    monkeypatch.setattr(config, "LOCK_PATH", str(tmp_path / "rt" / "scheduler.lock"))
     st = get_scheduler_status(tmp_path / "sched.sqlite3")
     assert st["apify_live_enabled"] is False
     assert st["scheduler_enabled"] is False
