@@ -1,8 +1,8 @@
-# Scheduler Runbook (v0.7)
+# Scheduler Runbook (v0.7.2)
 
-**Release status:** built and merged, **defaults disabled**, and **no Windows Scheduled
-Task is installed by this release**. This runbook documents the intended operation and
-the safe manual paths available today.
+**Release status:** v0.7.2 is merged and tagged, **defaults disabled**. The existing
+out-of-band Windows task remains registered but disabled; it was not updated or run by
+this release step. Reinstall/update it separately only after an explicit operator review.
 
 ## Safety defaults (all OFF)
 
@@ -16,6 +16,33 @@ the safe manual paths available today.
 In addition, `scheduled-run` requires the explicit `--confirm-scheduled-run` flag;
 without it the CLI refuses. **Nothing runs or sends automatically.**
 
+## Windows launcher behavior
+
+The PowerShell-facing trigger names remain stable and map to the exact CLI values:
+
+| PowerShell mode | CLI trigger value |
+|---|---|
+| `ScheduledCanary` | `scheduled_canary` |
+| `Daily` | `daily_schedule` |
+
+Preview and install print both values. The generated Task Scheduler action uses an
+absolute `powershell.exe` path and an absolute `scripts/windows_scheduler_run.ps1`
+path, rather than storing a direct Python command:
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File <RepoRoot>\scripts\windows_scheduler_run.ps1 -RepoRoot <RepoRoot> -TriggerMode scheduled_canary -ConfirmRun
+```
+
+The launcher resolves `<RepoRoot>\.venv\Scripts\python.exe` and sets
+`RDSA_SCHEDULER_ENABLED=true` only in its own process before starting the child.
+`RDSA_SCHEDULER_SEND_ENABLED=false` is the default. Sending requires the separate,
+explicit `-EnableScheduledSend` switch. The launcher restores prior process values in
+`finally`; it never edits `.env` or writes user-scope or machine-scope environment
+variables. No token, chat ID, or other secret is placed in task arguments.
+
+The installed task currently retains its old action until it is separately reinstalled
+or updated. The patched preview/install scripts generate the launcher action above.
+
 ## Read-only status (always safe)
 
 ```powershell
@@ -25,39 +52,49 @@ python -m rdsa.cli scheduler-status
 
 ```powershell
 # Preview the Windows task that *would* be created (no change)
-pwsh scripts/windows_scheduler_preview.ps1 -TriggerMode Daily -At "08:30"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File <RepoRoot>\scripts\windows_scheduler_preview.ps1 -TriggerMode ScheduledCanary -At "08:30"
 ```
 
-## Manual scheduled run (today, with kill switches enabled)
+## Fail-closed refusal (safe no-op)
 
 ```powershell
-$env:RDSA_SCHEDULER_ENABLED = "true"
-# optional, for delivery:
-# $env:RDSA_SCHEDULER_SEND_ENABLED = "true"
-python -m rdsa.cli scheduled-run --confirm-scheduled-run --trigger-type daily_schedule
+$env:RDSA_SCHEDULER_ENABLED = "false"
+$env:RDSA_SCHEDULER_SEND_ENABLED = "false"
+<RepoRoot>\.venv\Scripts\python.exe -m rdsa.cli scheduled-run `
+  --confirm-scheduled-run `
+  --trigger-type scheduled_canary
 ```
 
-The run acquires the lock, records a ledger row, validates inventory, checks cost, runs
-one Apify batch (in-process live only after preflight), persists, claims deliveries
-atomically, sends ≤3 cards only if sending enabled, then restores flags and releases the lock.
+With scheduler flags false, this prints `Scheduler disabled: ...`, returns refusal JSON,
+and currently exits `0`. It returns before acquiring the lock or opening the scheduled-run
+ledger path: zero Apify calls, zero Telegram calls, and no database mutation.
 
-## Activation (out of scope for v0.7 — documented for readiness)
+## Controlled process-local activation path
 
-1. Set `RDSA_SCHEDULER_ENABLED=true` in `.env` (and `RDSA_SCHEDULER_SEND_ENABLED=true`
-   only when delivery is desired).
-2. Install the task, **Disabled by default**:
+For a separately approved canary, invoke the launcher with explicit confirmation. The
+launcher enables scheduled execution only for its child process and keeps sending off:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File <RepoRoot>\scripts\windows_scheduler_run.ps1 `
+  -RepoRoot <RepoRoot> -TriggerMode scheduled_canary -ConfirmRun
+```
+
+Add `-EnableScheduledSend` only as a separate, explicit sending approval. Do not put
+either scheduler flag in `.env` for this launcher path; the launcher does not modify
+`.env`, user environment, or machine environment.
+
+## Task installation/update (out of band)
+
+1. Preview the mapped action first.
+2. Separately reinstall/update the task, **Disabled by default**, only with explicit
+   operator approval:
    ```powershell
-   pwsh scripts/windows_scheduler_install.ps1 -ConfirmInstall -TriggerMode Daily -At "08:30"
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File <RepoRoot>\scripts\windows_scheduler_install.ps1 -ConfirmInstall -TriggerMode ScheduledCanary -At "08:30"
    ```
-3. Enable only after a successful canary review:
-   ```powershell
-   pwsh scripts/windows_scheduler_install.ps1 -ConfirmInstall -TriggerMode Daily -At "08:30" -Enable
-   # or:
-   pwsh scripts/windows_scheduler_enable.ps1 -ConfirmEnable
-   ```
+3. Do not enable or run the task until a separate live-canary gate is approved.
 4. Verify:
    ```powershell
-   pwsh scripts/windows_scheduler_status.ps1
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File <RepoRoot>\scripts\windows_scheduler_status.ps1
    ```
 
 ## Deactivation / rollback
@@ -69,8 +106,8 @@ pwsh scripts/windows_scheduler_remove.ps1 -ConfirmRemove
 ```
 
 Then set both kill switches back to `false`. No code change is required to deactivate.
-**Rollback tag:** `v0.7-daily-scheduler-foundation` (detached HEAD at the merged
-foundation). Use `git checkout v0.7-daily-scheduler-foundation` to revert.
+**Rollback tag:** `v0.7.1-windows-launcher-hardening` (the prior merged launcher
+release). Use `git checkout v0.7.1-windows-launcher-hardening` to inspect or roll back.
 
 ## Lock recovery
 

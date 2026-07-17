@@ -30,20 +30,21 @@ $script:ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Get-RepoRoot -ExplicitRepoRoot $RepoRoot
 Show-TimezonePreflight
 
+$mode = Get-TriggerModeInfo -TriggerMode $TriggerMode
+$python = Resolve-PythonExecutable -RepoRoot $RepoRoot
+$actionSpec = Get-SchedulerTaskAction -RepoRoot $RepoRoot -TriggerMode $TriggerMode
+
 Write-Host "PREVIEW ONLY - no Windows change will be made." -ForegroundColor Yellow
 Write-Host "Repository root : $RepoRoot"
 Write-Host "Task name       : $TaskName"
-Write-Host "Trigger mode    : $TriggerMode"
+Write-Host "Trigger mode (PowerShell) : $($mode.PowerShellMode)"
+Write-Host "CLI trigger value        : $($mode.CliMode)"
 Write-Host "At (local)      : $At"
-
-# Resolve the Python executable that the task WOULD use (never bare 'python').
-$python = Resolve-PythonExecutable -RepoRoot $RepoRoot
 Write-Host "Python exe      : $python" -ForegroundColor Cyan
 Write-Host "Initial state   : $(if ($Enable) { 'Enabled' } else { 'Disabled' })"
 
-$actionArgs = "-m rdsa.cli scheduled-run --confirm-scheduled-run --trigger-type $TriggerMode"
-Write-Host "Action          : $python $actionArgs"
+Write-Host "Action          : $($actionSpec.Execute) $($actionSpec.Arguments)"
 Write-Host "Working dir     : $RepoRoot"
-Write-Host "Note            : Task passes --confirm-scheduled-run only. Apify/Telegram live flags are"
-Write-Host "                  enabled in-process by the agent after preflight; NO tokens are embedded in the task."
+Write-Host "Note            : Action invokes the process-local launcher with scheduler sending disabled by default."
+Write-Host "                  The launcher enables scheduler execution only in its own process; NO tokens are embedded in the task."
 Write-Host "Idempotent      : install is a no-op if the task name already exists."
