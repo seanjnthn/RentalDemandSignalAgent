@@ -796,3 +796,94 @@ final corrected controller issued exactly one `Start-ScheduledTask` invocation.
 - **Task:** disabled again after completion
 - **Persistent flags after restore:** all false
 
+---
+
+## Run #9 findings → v0.7.3 — SCHEDULER QUALITY HARDENING (offline; branch fix/v073-scheduler-quality-hardening)
+
+Run #9 (ScheduledCanary `sch-20260717T020147Z-6a5956e5`) produced **4 new leads** and exposed four
+offline defects surfaced during the post-run inspection (no Apify/Telegram re-calls, no historical
+record mutation, no DB wipe). This milestone fixes all four at the source and is **offline-verified**
+against the production `rdsa.sqlite3` (read-only reprocess).
+
+The four affected leads:
+- `3829775294010720778` — genuine first-person family/school seeker, but stored as `agent_broker`
+  (false negative; `classifier_reason` also `NULL`).
+- `3941710706454887314` — listing with `Luas kamarnya : 23m`, `IPL per bulan : 285rb`,
+  `Harga sewa per tahun : 25 juta (Nego)`; stored budget was `23,000,000–285,000 / month` (garbage:
+  area read as money, IPL mixed with rent).
+- `3934246864783171346` — `harga : Rp. 1.300.000/bln`; the `Rp.` prefix was not parsed → budget
+  `NULL`.
+- `3933861953134938990` — genuine listing; `classifier_reason` `NULL` (pure persistence defect).
+
+### Defect A — false-negative classifier (genuine seeker → agent_broker)
+A genuine first-person renter ("anakku sebentar lagi sekolah", "lama nyari", "rumah kecil yg mau
+dikontrakin") was flagged `agent_broker` because its text contains "harga sewanya" — `STRONG_OFFERING`
+included the bare substring `harga sewa`, which fired without any amount.
+**Fix (`classifier.py` + `scoring_config.py`):**
+- New `GENUINE_SEEKER_HOUSEHOLD` (anak/sekolah/lama nyari/rumah kecil/butuh/domisili family context)
+  so family/school demand is recognised as genuine even without the explicit `GENUINE_SEEKER_CONTROLS`.
+- New `STRONG_LISTING_SIGNALS` (unit ownership/availability, explicit price, facilities, contact CTA).
+- New `_has_strong_listing_proof()` — bare `harga sewa` **without** an amount is NOT proof.
+- Genuine-seeker precedence: when `rental_intent != "offering"` and no strong-listing proof exists,
+  an ambiguous offering-form word (`sewa`/`dikontrakkan`/`harga sewa`) is overridden → seeker
+  (`genuine_seeker_override` / `genuine_seeker_low_score`). A real listing with strong proof still
+  stays `agent_broker`. `dikontrakkan`/`dikontrakin` added to `STRONG_OFFERING` so the control is exercised.
+
+### Defect B — budget extraction mixed area / IPL / rent
+`23m` was interpreted as IDR 23,000,000; `IPL 285rb` was folded into the rent range; `25 juta/tahun`
+was not distinguished from monthly.
+**Fix (`budget_parser.py`, full rewrite, role-aware):**
+- Per-line label detection (area / IPL / deposit / rent / service).
+- Dimension/area exclusion: `23m`, `12mtr`, `3 x 5m` near an area keyword (`luas`/`uk.`/`kamar`) are
+  **never** money.
+- IPL / service charge / deposit are tagged as **separate** non-rent charges (excluded from the rent
+  figure) — `285rb` IPL and `25 juta/tahun` rent are now cleanly separated.
+- Explicit `a-b <unit>` range matcher (e.g. `3-4 juta`) bound to BOTH endpoints.
+- Primary rent selection by period; yearly stored natively (not silently month-normalised).
+- New `BudgetResult` fields: `role`, `rent_figure`, `area_text`, `candidates`, `normalized_note`.
+
+### Defect C — `classifier_reason` missing for all four new leads
+The value was computed but never persisted: `Lead` lacked the field, so `asdict`/`to_dict` dropped it,
+and the SQLite INSERT used a fixed column list.
+**Fix (`extractor.py` + `db.py`):** added `classifier_reason: str | None = None` to the `Lead`
+dataclass; `to_dict` now serialises it; `upsert_lead` writes it. The UPSERT refreshes only `last_seen`
+on conflict, so a meaningful existing reason is **never** clobbered with `NULL`.
+
+### Defect D — no scheduled-run → lead provenance
+Leads could only be linked to a run via timestamp reconstruction of `last_seen`.
+**Fix (`db.py` + `scheduler.py`, `scheduled_run_leads` table):**
+- New `scheduled_run_leads(run_id, post_id, inserted_this_run, classification, eligible, created_at,
+  PRIMARY KEY(run_id, post_id))` — created idempotently on `connect()` and via `migrate_provenance`.
+- `associate_run_leads(c, run_id, associations)` records **every** processed lead (new + already-existing)
+  for a run; composite PK makes it idempotent (`INSERT OR IGNORE`). Returns the count of NEW rows.
+- `leads_for_run(c, run_id)` and `new_post_ids_for_run(c, run_id)` recover the exact association with
+  no timestamp reconstruction. No secrets or raw text stored.
+
+### Offline reprocess (prod `rdsa.sqlite3`, read-only — no write-back)
+| post | STORED (old) | NEW (v0.7.3) |
+|---|---|---|
+| `3829775294010720778` | `agent_broker`, reason `NULL` | **`watch`**, `genuine_seeker_override: harga sewa` |
+| `3941710706454887314` | `agent_broker`, budget `23M–285k / month` | `agent_broker`, budget **`25,000,000 / year`** (23m→area, IPL excluded) |
+| `3934246864783171346` | `agent_broker`, budget `NULL` | `agent_broker`, budget **`1,300,000 / month`** (`Rp.` parsed), `high` |
+| `3933861953134938990` | reason `NULL` | reason persisted (genuine listing) |
+
+### Tests
+`tests/test_v073_quality_hardening.py` (18 tests): genuine-seeker precedence (family/school, `dikontrakkan`
+context, strong-listing stays broker), budget (23m+IPL+rent, `Rp. 1.3M/bln`, dimensions not money,
+IPL/deposit/service not rent), `classifier_reason` persistence (SQLite write + no-clobber on re-upsert),
+and provenance (migration idempotent, queryable by run_id, duplicate blocked, `new_post_ids_for_run`,
+historical tables unchanged, scheduler records associations).
+
+### Rollback tag
+`git tag -a v0.7.3-scheduler-quality-hardening` (annotated, points at the `--no-ff` merge of
+`fix/v073-scheduler-quality-hardening` into `main`). If a regression appears, `git revert -m 1 <merge>`
+or check out the parent of the tag to roll back.
+
+### Safety / integrity
+- All four persistent flags false (`SCHEDULER_ENABLED`/`SCHEDULER_SEND_ENABLED`/`TELEGRAM_SEND_ENABLED`/
+  `APIFY_LIVE_ENABLED`) ✅
+- No Apify/Telegram calls during this work ✅ · Windows task remains disabled ✅ · No lock remains ✅
+- Historical lead/alert/claim/scheduled-run rows untouched (read-only reprocess) ✅
+- Full suite **251 passed, 1 skipped** (the skip is the symlink-privilege `test_venv_python_preferred`,
+  environment-bound) ✅ · `git diff --check` clean ✅
+

@@ -48,3 +48,31 @@ THIRD_PARTY_DEMAND_SIGNALS = (
     "saya lagi ada client cari",
 )
 RENTAL_CONTEXT_SIGNALS = ("apartemen", "apartment", "kontrakan", "kost", "kos", "rumah", "sewa", "rental")
+# First-person occupancy / family / school demand — an author who wants to LIVE in the
+# unit with their household. These are deliberately specific (not bare "saya cari") so they
+# do not catch third-party agents ("client saya cari"). When present with a seeking intent
+# and no strong-listing proof, an ambiguous offering-form word (e.g. bare "sewa"/"kontrak")
+# must NOT force an agent_broker classification.
+GENUINE_SEEKER_HOUSEHOLD = (
+    "anakku", "anak saya", "anak kami", "anak akan sekolah", "anak sebentar",
+    "mau di sekolahin", "sekolahin anak", "lama nyari", "udah lama nyari",
+    "sudah lama nyari", "sudah lama mencari", "lama mencari", "nyari kontrakan",
+    "cari kontrakan", "rumah kecil", "kontrakan kecil",
+)
+# Strong-listing proof: when ANY of these is present, the post is a genuine supply listing,
+# NOT a seeker — even if first-person occupancy/family context also appears. Covers explicit
+# offering verbs, unit ownership/availability, explicit price (harga sewa + amount), facilities,
+# and contact CTA. NOTE: a bare "harga sewa" with NO following amount is the ambiguous seeker
+# phrase ("harga sewanya gak terlalu mehol") and is therefore NOT treated as proof.
+STRONG_LISTING_SIGNALS = (
+    "disewakan", "sewakan", "dijual", "jual", "buka opsi", "menerima titip",
+    "agent listing", "broker listing", "cari penyewa", "cari tenant", "butuh penyewa",
+    "butuh tenant",
+    "ada unit", "saya ada unit", "kami ada unit", "punya unit", "unit available",
+    "available for rent", "ready unit", "tersedia unit", "listing available", "open listing",
+    "unit kami", "unit owner", "pemilik langsung", "direct owner", "unit disewakan",
+    "unit dijual", "sewa unit", "jual unit", "harga sewa",
+    "fasilitas", "furniture", "furnished", "amenities", "spek", "spesifikasi",
+    "dm untuk detail", "wa untuk info", "silakan hubungi", "boleh dm", "boleh hubungi",
+    "wa admin", "contact us",
+)

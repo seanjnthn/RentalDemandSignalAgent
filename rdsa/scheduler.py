@@ -303,6 +303,7 @@ def run_scheduled_run(args) -> dict:
     from .cli import process_raw
     from .apify_provider import ApifyThreadsProvider
     from .inventory import validate_real_inventory_for_scan
+    from .db import migrate_provenance, associate_run_leads
 
     c = D.connect(config.DB_PATH)
     migrate_ledger(c)
@@ -374,6 +375,17 @@ def run_scheduled_run(args) -> dict:
                    if l.post_id in set(new_post_ids)
                    and preview_eligible(l)
                    and l.lead_class != "agent_broker"]
+
+        # ---- provenance: link every processed lead to this run (idempotent) ----
+        migrate_provenance(c)
+        new_set = set(new_post_ids)
+        eligible_set = {l.post_id for l in eligible}
+        associations = [
+            {"post_id": l.post_id, "inserted_this_run": l.post_id in new_set,
+             "classification": l.lead_class, "eligible": l.post_id in eligible_set}
+            for l in result["leads"]
+        ]
+        associate_run_leads(c, run_id, associations)
 
         claimed = 0
         sent = 0
