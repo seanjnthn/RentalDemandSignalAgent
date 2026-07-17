@@ -653,3 +653,146 @@ Source text, extracted data, classification, score, matches, msg 26, alerts (3),
 - 175-test suite passed (re-run after append) ✅
 - Working tree changed only by this PILOT_LOG append ✅
 
+---
+
+## Run #9 — v0.7.2 Windows ScheduledCanary scan-only canary (2026-07-17)
+
+One controlled execution through Windows Task Scheduler using the disabled
+`RentalDemandSignalAgent-Daily` launcher definition. The task was enabled only for this
+single invocation and disabled immediately after terminal completion. The launcher
+used process-local scheduler enablement with scheduled sending disabled; `.env` and
+user/machine environment state were not modified. No author contact was attempted.
+
+Three pre-start controller checks aborted before enablement because of local controller
+validation mistakes; they issued zero task starts and caused zero Actor attempts. The
+final corrected controller issued exactly one `Start-ScheduledTask` invocation.
+
+### Preflight
+
+| Check | Result |
+|---|---|
+| Exactly one target task | ✅ |
+| Disabled launcher action, no send opt-in | ✅ |
+| Project-local Python resolved and smoke-tested | ✅ |
+| Windows timezone | ✅ `SE Asia Standard Time`, UTC+07:00 |
+| Scheduler lock absent | ✅ |
+| Scheduled-run rows before run | `0` |
+| Leads / alerts / delivery claims before run | `123` / `3` / `7` |
+| Apify usage before run | `$1.144`, 160 runs |
+| Projected usage with `$0.10` maximum | `$1.244 < $4.75` ✅ |
+| Working tree and four persistent flags | clean / all false ✅ |
+
+### A. Windows Task Scheduler
+
+- **Task start:** 09:01:45 local WIB (`LastRunTime`)
+- **Ledger start:** `2026-07-17T02:01:47.415914+00:00`
+- **Ledger finish:** `2026-07-17T02:03:02.850023+00:00`
+- **Controller restore complete:** 09:03:06 local WIB
+- **Observed states:** `Running` → `Ready` → disabled by controller
+- **Final task state:** `Disabled`; `Enabled=False`
+- **Last task result:** decimal `0`; hexadecimal `0x00000000`
+- **Task execution count:** exactly `1`
+- **Second task invocation:** none
+
+### B. Process lock
+
+- **Lock acquired:** yes; the run completed rather than taking the lock-conflict path
+- **Lock/run ID:** `sch-20260717T020147Z-6a5956e5`
+- **Overlapping execution:** none; no second invocation was issued
+- **Lock released:** yes
+- **Stale lock remaining:** no
+
+### C. Scheduled-run ledger
+
+- **New ledger rows:** `1` (`scheduled_runs`: `0` → `1`)
+- **Run ID:** `sch-20260717T020147Z-6a5956e5`
+- **Trigger type:** `scheduled_canary`
+- **Started:** `2026-07-17T02:01:47.415914+00:00`
+- **Finished:** `2026-07-17T02:03:02.850023+00:00`
+- **Final status:** `completed_no_eligible_leads`
+- **Raw posts:** `10`
+- **Normalized posts:** `10`
+- **Existing posts:** `6`
+- **New posts:** `4`
+- **Eligible leads:** `0`
+- **Claimed deliveries:** `0`
+- **Sent cards:** `0`
+- **Ledger run-cost cap:** `$0.100`
+- **Observed usage-file increment:** `$0.045` (`$1.144` → `$1.189`)
+- **Cumulative monthly cost:** `$1.189`
+- **Actor run ID:** not exposed by the provider ledger adapter
+- **Error:** none; `error_code` and `sanitized_error` are null
+
+### D. Data behavior
+
+- **Lead rows:** `123` → `127` (`+4` genuinely new posts)
+- **Historical posts refreshed:** `6` existing posts (`last_seen` refresh path)
+- **Genuinely new posts:** `4`
+- **Alerts:** `3` → `3`
+- **Delivery claims:** `7` → `7`
+- **Historical records:** no deletion or historical alert/claim rewrite occurred
+
+### E. Network behavior
+
+- **Apify Actor runs:** exactly `1` (usage-file run count `160` → `161`)
+- **Automatic retries:** `0`
+- **Telegram HTTP calls:** `0`
+- **Telegram cards sent:** `0`
+- **Author contact:** `0`
+
+### F. Safety restore
+
+- Task disabled again ✅
+- Scheduler lock absent ✅
+- `RDSA_SCHEDULER_ENABLED=false` outside the child process ✅
+- `RDSA_SCHEDULER_SEND_ENABLED=false` ✅
+- `APIFY_LIVE_ENABLED=false` ✅
+- `RDSA_TELEGRAM_SEND_ENABLED=false` ✅
+- `.env` unchanged ✅
+- Production code unchanged ✅
+- Exactly one RDSA task exists; no additional task or cron created ✅
+- The working tree was clean before this append; this log append is the only current change ✅
+
+### Run #9 execution clarification
+
+#### Preflight controller attempt
+
+- **Controller interval:** `2026-07-17T08:59:31.7967727+07:00` → `2026-07-17T08:59:33.9906504+07:00`
+- **Outcome:** exited before task enablement
+- **`Start-ScheduledTask` calls:** `0`
+- **Apify calls:** `0`
+- **Telegram calls:** `0`
+- **New scheduled-run ledger row:** none
+- **Scheduler lock:** absent
+- **Task state:** remained disabled; `Enabled=False`
+- **Cause:** controller-side PowerShell enum/boolean comparison error; the controller incorrectly treated the expected `Enabled=False` disabled state as a failed precondition
+
+#### Actual ScheduledCanary
+
+- **Controller interval:** `2026-07-17T09:01:41.0996742+07:00` → `2026-07-17T09:03:06.3581792+07:00`
+- **Invocation path:** exactly one `Start-ScheduledTask` through Windows Task Scheduler
+- **Running state:** observed
+- **Task `LastRunTime`:** `2026-07-17 09:01:45` local WIB
+- **Final task result:** decimal `0`; hexadecimal `0x00000000`
+- **Ledger run ID:** `sch-20260717T020147Z-6a5956e5`
+- **Ledger status:** `completed_no_eligible_leads`
+- **Ledger trigger type:** `scheduled_canary`
+- **Ledger start:** `2026-07-17T02:01:47.415914+00:00`
+- **Ledger finish:** `2026-07-17T02:03:02.850023+00:00`
+- **Raw / normalized posts:** `10` / `10`
+- **Existing / new posts:** `6` / `4`
+- **Eligible leads:** `0`
+- **Claimed deliveries / sent cards:** `0` / `0`
+- **Ledger run-cost cap:** `$0.100`
+- **Observed usage-file increment:** `$0.045` (`$1.144` → `$1.189`)
+- **Cumulative monthly usage:** `$1.189`; usage runs `160` → `161`
+- **Actor run ID:** not recorded
+- **Apify Actor requests:** `1`
+- **Automatic retries:** `0`
+- **Telegram messages:** `0`
+- **Alerts:** unchanged at `3`
+- **Delivery claims:** unchanged at `7`
+- **Lock:** acquired for run ID above, released after completion, no stale lock
+- **Task:** disabled again after completion
+- **Persistent flags after restore:** all false
+
