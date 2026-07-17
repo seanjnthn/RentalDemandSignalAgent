@@ -629,12 +629,48 @@ live-gating logic).
 
 **Rollback tag:** `v0.7-daily-scheduler-foundation`.
 
+### 8.14. v0.7.2 Windows canary launcher (merged, offline-validated)
+
+The Windows canary launcher hardening is merged and tagged as
+`v0.7.2-windows-canary-launcher`. It changes only the Windows launcher path; scheduler
+business logic is unchanged.
+
+**Trigger mapping:** PowerShell-facing `ScheduledCanary` maps to CLI
+`scheduled_canary`; PowerShell-facing `Daily` maps to CLI `daily_schedule`. Preview and
+install print both the user-facing mode and mapped CLI value.
+
+**Task action:** preview/install generate an absolute `powershell.exe` action invoking
+the absolute `scripts/windows_scheduler_run.ps1` launcher. The action passes the mapped
+CLI trigger and `-ConfirmRun`; it does not store a bare Python executable, token, chat
+ID, `.env` value, or other secret.
+
+**Process-local safety:** the launcher resolves `<RepoRoot>\\.venv\\Scripts\\python.exe`
+and sets `RDSA_SCHEDULER_ENABLED=true` only in the launcher/child process. Scheduled
+sending defaults to `false`; `-EnableScheduledSend` is the separate explicit opt-in.
+Prior process values are restored in `finally`; `.env`, user-scope environment, and
+machine-scope environment are not modified.
+
+The existing installed `RentalDemandSignalAgent-Daily` task remains disabled and keeps
+its old action until it is separately reinstalled or updated. This release did not
+update, enable, or run that task.
+
+With both scheduler flags false, the direct `scheduled-run` CLI path safely refuses
+before lock/ledger work, makes zero Apify or Telegram calls, performs no database
+mutation, and currently exits `0` with the Scheduler disabled refusal.
+
+**Verification:** targeted launcher tests: **19 passed, 1 expected environmental skip**;
+full suite: **233 passed, 1 expected environmental skip**; all four PowerShell scripts
+parse successfully. No live Apify or Telegram calls were made.
+
+**Rollback tag:** `v0.7.1-windows-launcher-hardening`.
+
 ## 11. Rollback
 
 Safe tags exist:
 ```bash
 git checkout v0.6.4-offering-classifier-hardening   # detached HEAD at merged offering/supply hardening
 git checkout v0.7-daily-scheduler-foundation   # detached HEAD at merged v0.7 scheduler foundation
+git checkout v0.7.1-windows-launcher-hardening # detached HEAD at v0.7.1 launcher hardening
 git checkout v0.6.3-delivery-classifier-hardening   # detached HEAD at merged hardening
 git checkout v0.6.2-dashboard-ux-refresh      # detached HEAD at merged UX/visual refresh
 git checkout v0.6.1-dashboard-runtime-fix     # detached HEAD at merged runtime + legacy-data fix

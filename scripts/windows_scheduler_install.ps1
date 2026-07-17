@@ -36,11 +36,14 @@ $script:ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Get-RepoRoot -ExplicitRepoRoot $RepoRoot
 Show-TimezonePreflight
 
-# Resolve the Python executable that the task WOULD use (read-only; never bare 'python').
-# Done before the install guard so the operator sees exactly what will run, and so
-# preview and install are provably driven by the same resolver.
+$mode = Get-TriggerModeInfo -TriggerMode $TriggerMode
 $python = Resolve-PythonExecutable -RepoRoot $RepoRoot
+$actionSpec = Get-SchedulerTaskAction -RepoRoot $RepoRoot -TriggerMode $TriggerMode
 Write-Host "Using Python exe : $python" -ForegroundColor Cyan
+Write-Host "Trigger mode (PowerShell) : $($mode.PowerShellMode)"
+Write-Host "CLI trigger value        : $($mode.CliMode)"
+Write-Host "Action          : $($actionSpec.Execute) $($actionSpec.Arguments)"
+Write-Host "Working dir     : $RepoRoot"
 
 if (-not $ConfirmInstall) {
     Write-Error "Refusing to install. Re-run with -ConfirmInstall, -At '<HH:MM>', and a trigger mode."
@@ -48,7 +51,6 @@ if (-not $ConfirmInstall) {
 }
 
 $repoRootNative = (Resolve-Path $RepoRoot).Path
-$actionArgs = "-m rdsa.cli scheduled-run --confirm-scheduled-run --trigger-type $TriggerMode"
 
 # Idempotent: remove any existing task with the same name first.
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -57,8 +59,9 @@ if ($existing) {
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-# Use the absolute interpreter so the task does not depend on the scheduler user's PATH.
-$action = New-ScheduledTaskAction -Execute $python -Argument $actionArgs -WorkingDirectory $repoRootNative
+# Use an absolute PowerShell path and the process-local launcher so the task does not
+# depend on PATH or embed scheduler/live credentials.
+$action = New-ScheduledTaskAction -Execute $actionSpec.Execute -Argument $actionSpec.Arguments -WorkingDirectory $repoRootNative
 if ($TriggerMode -eq 'Daily') {
     $trigger = New-ScheduledTaskTrigger -Daily -At $At
 } else {

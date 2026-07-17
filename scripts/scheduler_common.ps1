@@ -54,6 +54,75 @@ function Get-RepoRoot {
     return $resolved.Path
 }
 
+function Convert-TriggerModeToCli {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ScheduledCanary', 'Daily')]
+        [string]$TriggerMode
+    )
+    switch ($TriggerMode) {
+        'ScheduledCanary' { return 'scheduled_canary' }
+        'Daily' { return 'daily_schedule' }
+    }
+    throw "Unsupported PowerShell trigger mode '$TriggerMode'."
+}
+
+function Get-TriggerModeInfo {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ScheduledCanary', 'Daily')]
+        [string]$TriggerMode
+    )
+    return [pscustomobject]@{
+        PowerShellMode = $TriggerMode
+        CliMode = Convert-TriggerModeToCli -TriggerMode $TriggerMode
+    }
+}
+
+function Resolve-PowerShellExecutable {
+    [CmdletBinding()]
+    param()
+    $candidates = @()
+    if ($PSHOME) {
+        $candidates += Join-Path $PSHOME 'powershell.exe'
+    }
+    try {
+        $command = Get-Command powershell.exe -ErrorAction Stop
+        if ($command.Source) { $candidates += $command.Source }
+        elseif ($command.Path) { $candidates += $command.Path }
+    } catch { }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+    throw "Could not resolve an absolute powershell.exe path."
+}
+
+function Get-SchedulerTaskAction {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ScheduledCanary', 'Daily')]
+        [string]$TriggerMode
+    )
+    $mode = Get-TriggerModeInfo -TriggerMode $TriggerMode
+    $runScript = (Resolve-Path (Join-Path $RepoRoot 'scripts\windows_scheduler_run.ps1')).Path
+    $powershell = Resolve-PowerShellExecutable
+    $arguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $runScript +
+        '" -RepoRoot "' + $RepoRoot + '" -TriggerMode ' + $mode.CliMode + ' -ConfirmRun'
+    return [pscustomobject]@{
+        Execute = $powershell
+        Arguments = $arguments
+        WorkingDirectory = $RepoRoot
+        PowerShellMode = $mode.PowerShellMode
+        CliMode = $mode.CliMode
+    }
+}
+
 <#
 .SYNOPSIS
 Resolve the Python executable that will run the scheduled task.

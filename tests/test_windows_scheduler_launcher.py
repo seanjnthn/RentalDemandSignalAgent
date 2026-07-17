@@ -26,6 +26,7 @@ SCRIPTS = REPO_ROOT / "scripts"
 PREVIEW = SCRIPTS / "windows_scheduler_preview.ps1"
 INSTALL = SCRIPTS / "windows_scheduler_install.ps1"
 COMMON = SCRIPTS / "scheduler_common.ps1"
+RUNNER = SCRIPTS / "windows_scheduler_run.ps1"
 TASK_NAME = "RentalDemandSignalAgent-Daily"
 
 POWERSHELL = shutil.which("powershell") or shutil.which("pwsh")
@@ -53,17 +54,18 @@ def _probe_task() -> str:
     return cp.stdout.strip()
 
 
-def test_preview_resolves_absolute_python_no_bare_name():
+def test_preview_resolves_absolute_powershell_no_bare_name():
     cp = _run_powershell(PREVIEW, "-TriggerMode", "ScheduledCanary", "-At", "08:30")
     assert cp.returncode == 0, cp.stderr
     assert "Python exe" in cp.stdout
     action_line = next((l for l in cp.stdout.splitlines()
                         if l.strip().startswith("Action")), "")
-    exe = action_line.split(":", 1)[1].strip().split(" -m")[0].strip()
-    assert exe.lower().endswith("python.exe"), f"action executable not python.exe: {exe}"
+    exe = action_line.split(":", 1)[1].strip().split(" -NoProfile")[0].strip()
+    assert exe.lower().endswith("powershell.exe"), f"action executable not powershell.exe: {exe}"
     assert exe.startswith(("C:\\", "\\\\", "/")), f"action executable not absolute: {exe}"
-    assert not re.search(r"(?i)(?<![\\/\.])python(?=\s|'|\")", action_line), \
-        f"bare 'python' found in action: {action_line}"
+    assert "windows_scheduler_run.ps1" in action_line
+    assert "-TriggerMode scheduled_canary" in action_line
+    assert not re.search(r"(?i)(?<![\\/\.])python(?=\s|'|\")", action_line), f"bare 'python' found in action: {action_line}"
 
 
 def test_preview_makes_no_windows_change():
@@ -72,7 +74,7 @@ def test_preview_makes_no_windows_change():
     assert cp.returncode == 0, cp.stderr
     assert "PREVIEW ONLY" in cp.stdout
     post = _probe_task()
-    assert pre == "NO_TASK" and post == "NO_TASK", f"task state changed: {pre} -> {post}"
+    assert pre == post, f"task state changed: {pre} -> {post}"
 
 
 def test_venv_python_preferred(tmp_path):
@@ -96,6 +98,7 @@ def test_venv_python_preferred(tmp_path):
     scripts_dir.mkdir(parents=True)
     shutil.copy(COMMON, scripts_dir / "scheduler_common.ps1")
     shutil.copy(PREVIEW, scripts_dir / "windows_scheduler_preview.ps1")
+    shutil.copy(RUNNER, scripts_dir / "windows_scheduler_run.ps1")
 
     script = scripts_dir / "windows_scheduler_preview.ps1"
     cp = subprocess.run(
@@ -116,6 +119,7 @@ def test_system_python_resolves_absolute(tmp_path):
     scripts_dir.mkdir(parents=True)
     shutil.copy(COMMON, scripts_dir / "scheduler_common.ps1")
     shutil.copy(PREVIEW, scripts_dir / "windows_scheduler_preview.ps1")
+    shutil.copy(RUNNER, scripts_dir / "windows_scheduler_run.ps1")
 
     script = scripts_dir / "windows_scheduler_preview.ps1"
     cp = subprocess.run(
@@ -134,6 +138,7 @@ def test_unresolved_python_aborts(tmp_path):
     scripts_dir.mkdir(parents=True)
     shutil.copy(COMMON, scripts_dir / "scheduler_common.ps1")
     shutil.copy(PREVIEW, scripts_dir / "windows_scheduler_preview.ps1")
+    shutil.copy(RUNNER, scripts_dir / "windows_scheduler_run.ps1")
 
     script = scripts_dir / "windows_scheduler_preview.ps1"
     env = dict(os.environ)
@@ -172,8 +177,9 @@ def test_task_arguments_contain_no_secrets():
         assert forbidden not in blob, f"forbidden secret signature '{forbidden}' in preview output"
     # No Telegram/Apify credential-looking assignment in the action.
     assert "token=" not in blob and "chat_id=" not in blob
-    assert "--confirm-scheduled-run" in cp.stdout
-    assert "scheduled-run" in cp.stdout
+    assert "-ConfirmRun" in cp.stdout
+    assert "daily_schedule" in cp.stdout
+    assert "windows_scheduler_run.ps1" in cp.stdout
 
 
 def test_timezone_preflight_output_present():
