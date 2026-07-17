@@ -778,13 +778,17 @@ interrupted/qualifying run: `run_id`, `status`, `current_phase`, `heartbeat_at`,
 (`dashboard/pages/7_Scheduler.py`) renders this as a new read-only panel. **No reconcile / run / enable /
 unlock / send button is exposed** — reconciliation remains an explicit CLI operator action only.
 
-**Run #10 status (read-only inspection, not yet reconciled).** `status=starting`, `current_phase=None`
-(recorded before this patch), `heartbeat_at=None`, `process_id=27332` (**dead**). A stale
-`runtime/scheduler.lock` exists referencing this run_id but its PID is dead → treated as a stale (not
-active) lock. As of inspection the run was ~105 min old (past the 1-hour grace) so it now **qualifies**
-as an interruption candidate. Reconciliation would change only: `status → interrupted`, `finished_at →
-<now>`, `interruption_reason → <sanitized>`; leads (127), alerts (3), delivery_claims (7), and monthly
-usage ($1.199) remain untouched. Run #10 remains **unreconciled** pending explicit operator action.
+**Run #10 status.** During v0.7.4 inspection it was `status=starting`, `current_phase=None`
+(recorded before this patch), `heartbeat_at=None`, `process_id=27332` (**dead**), with a stale
+`runtime/scheduler.lock` referencing this run_id but whose PID is dead → treated as a stale (not
+active) lock. As of inspection the run was ~105 min old (past the 1-hour grace) so it **qualified** as
+an interruption candidate. Reconciliation would change only `status → interrupted`, `finished_at →
+<now>`, `interruption_reason → <sanitized>`; leads (127), alerts (3), delivery_claims (7) untouched.
+**Run #10 was subsequently reconciled out-of-band** via the explicit confirmed command
+`python -m rdsa.cli scheduler-reconcile --run-id sch-20260717T042351Z-a0dbee12 --confirm-reconcile` →
+`status=interrupted`, `finished_at=2026-07-17T06:20:42.405249+00:00`, `idempotent=false`, **no retry,
+no Apify/Telegram call**, only the `scheduled_runs` terminal fields changed. **Run #10 is now CLOSED**
+as `interrupted` (see `docs/PILOT_LOG.md`).
 
 **Tests.** `tests/test_v074_interrupted_run_recovery.py` (25): dead-PID/no-lock/past-grace candidate;
 live-PID refusal; active-lock refusal; age-alone insufficient; missing-confirmation refusal; explicit

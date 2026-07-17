@@ -969,3 +969,30 @@ candidates read-only with **no reconcile button**.
 - **Run #10 remains UNRECONCILED** — no `scheduler-reconcile` was executed; the stale lock was left
   intact. Reconcile only on explicit operator instruction.
 
+### Run #10 reconciliation (CLOSED as interrupted, v0.7.4)
+
+Operator executed the explicit, confirmed reconciliation command **out-of-band** (no code change, no
+Apify/Telegram call, no `scheduler-reconcile` re-run):
+
+```bash
+python -m rdsa.cli scheduler-reconcile --run-id sch-20260717T042351Z-a0dbee12 --confirm-reconcile
+```
+
+Result: `reconciled=true`, `status=interrupted`, `process_id=27332`,
+`finished_at=2026-07-17T06:20:42.405249+00:00`, `idempotent=false`. The sanitized reason recorded:
+`Process terminated by OS while status=starting; last known phase=starting.`
+
+**What changed:** only the `scheduled_runs` terminal fields for this run
+(`status`, `finished_at`, `interruption_reason`). **No retry occurred** — the interrupted Actor attempt
+was never re-attempted (recovery is a manual, confirmed operator action only). **No Apify or Telegram
+call occurred.** Verified unchanged: leads (127), alerts (3), delivery_claims (7). The git-ignored
+`data/apify_usage.json` reads **$1.201** at close (a ~$0.002 delta vs the $1.199 read during v0.7.4
+inspection) — `reconcile_run` does not write this file and performed no paid run, so the delta is
+orthogonal to the reconciliation; noting for the operator's awareness.
+
+**Residual state (intentional):** a stale `runtime/scheduler.lock` referencing this run_id persists on
+disk, but its PID (27332) is dead, so detection/classification treat it as **inactive** (it does not
+block a future run or qualify as an active lock). Removing it requires the separate explicit
+`scheduler-unlock --confirm-unlock` operator action and is **out of scope** here. The Windows task
+`RentalDemandSignalAgent-Daily` remains **Disabled**. **Run #10 is now CLOSED** as `interrupted`.
+
