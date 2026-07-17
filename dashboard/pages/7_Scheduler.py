@@ -5,6 +5,13 @@ and current flags. Intentionally provides NO run-now / enable / send / unlock /
 task-install controls, and exposes NO tokens, chat IDs, .env values, or
 Windows usernames.
 """
+import sys
+from pathlib import Path
+
+_ROOT = str(Path(__file__).resolve().parents[2])
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
 import streamlit as st
 
 from dashboard.theme import apply_theme
