@@ -66,19 +66,28 @@ def branded_page_header(
     *,
     meta: Any = None,
     eyebrow: str = "Rental Demand Signal",
+    anchorless: bool = False,
 ) -> str:
     meta_html = f'<div class="rdsa-muted">{_safe(meta)}</div>' if meta else ""
+    title_html = (
+        f'<div class="rdsa-page-title">{_safe(title)}</div>'
+        if anchorless
+        else f'<h1>{_safe(title)}</h1>'
+    )
     body = (
         '<header class="rdsa-page-header">'
         '<div>'
         f'<div class="rdsa-eyebrow">{_safe(eyebrow)}</div>'
-        f'<h1>{_safe(title)}</h1>'
+        f"{title_html}"
         f'<div class="rdsa-muted">{_safe(description)}</div>'
         "</div>"
         f"{meta_html}"
         "</header>"
     )
-    st.markdown(body, unsafe_allow_html=True)
+    if anchorless:
+        st.html(body)
+    else:
+        st.markdown(body, unsafe_allow_html=True)
     return body
 
 

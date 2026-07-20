@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from numbers import Real
 from typing import Any
 
@@ -50,6 +50,36 @@ RDSA_ALTAIR_THEME = {
         },
         "view": {"stroke": COLORS["border"], "strokeOpacity": 0.65},
     }
+}
+
+OVERVIEW_DISTRIBUTION_COLORS = {
+    "Genuine seeker": "teal",
+    "Review required": "amber",
+    "Agent / offering": "blue",
+    "Irrelevant": "muted",
+    "Exact": "teal",
+    "Nearby": "blue",
+    "Tentative": "amber",
+    "No match": "muted",
+}
+
+OVERVIEW_DISTRIBUTION_DEFINITIONS = {
+    "Genuine seeker": "Stored leads classified as high-signal or qualified seekers.",
+    "Review required": "Stored watch, unknown, or unrecognized classifications requiring review.",
+    "Agent / offering": "Stored agent, broker, or property-offering classifications.",
+    "Irrelevant": "Stored irrelevant or spam classifications.",
+    "Exact": "Active exact matches to validated real inventory.",
+    "Nearby": "Active nearby alternatives from validated real inventory.",
+    "Tentative": "Active tentative matches requiring review.",
+    "No match": "Leads with no active match to validated real inventory.",
+}
+
+OVERVIEW_VOLUME_DEFINITIONS = {
+    "Stored leads": "All stored leads in the current repository snapshot.",
+    "High signal": "Stored leads classified as high signal.",
+    "Qualified": "Stored leads classified as qualified.",
+    "Active matches": "Active exact, nearby, or tentative matches to validated real inventory.",
+    "Delivered": "Recorded immutable Telegram delivery rows.",
 }
 
 
@@ -145,6 +175,129 @@ def _bars(values: Iterable[Any], title: str, color: str = "teal") -> alt.Chart:
             y=alt.Y("label:N", sort="-x", title=None),
             tooltip=[
                 alt.Tooltip("label:N", title="Category"),
+                alt.Tooltip("value:Q", title="Count", format="d"),
+            ],
+        )
+        .properties(title=title, height=220)
+    )
+    return _styled(chart)
+
+
+def overview_volume_chart(values: Mapping[str, Any]) -> alt.Chart:
+    """Plot explicitly independent recorded volumes, never a conversion funnel."""
+
+    rows = [
+        {
+            "stage": name,
+            "definition": OVERVIEW_VOLUME_DEFINITIONS.get(
+                name, "Independent recorded repository volume."
+            ),
+            "value": count,
+        }
+        for name, raw in values.items()
+        if (count := valid_count(raw)) is not None
+    ]
+    if not rows:
+        return _empty(
+            "Independent recorded volumes",
+            "No valid recorded counts available.",
+        )
+    stage_order = [row["stage"] for row in rows]
+    chart = (
+        alt.Chart(pd.DataFrame(rows))
+        .mark_bar(cornerRadiusEnd=3)
+        .encode(
+            x=alt.X(
+                "value:Q",
+                title="Recorded count",
+                axis=alt.Axis(format="d"),
+                scale=alt.Scale(
+                    domain=_finite_domain(row["value"] for row in rows)
+                ),
+                stack=None,
+            ),
+            y=alt.Y("stage:N", sort=stage_order, title=None),
+            color=alt.Color(
+                "stage:N",
+                legend=None,
+                scale=alt.Scale(
+                    domain=stage_order,
+                    range=[
+                        COLORS["blue"],
+                        COLORS["teal"],
+                        COLORS["teal"],
+                        COLORS["amber"],
+                        COLORS["muted"],
+                    ][: len(stage_order)],
+                ),
+            ),
+            tooltip=[
+                alt.Tooltip("stage:N", title="Recorded volume"),
+                alt.Tooltip("definition:N", title="Definition"),
+                alt.Tooltip("value:Q", title="Count", format="d"),
+            ],
+        )
+        .properties(title="Independent recorded volumes", height=220)
+    )
+    return _styled(chart)
+
+
+def overview_distribution_chart(
+    values: Mapping[str, Any],
+    title: str,
+    *,
+    record_count: Any,
+    minimum_records: int = 3,
+) -> alt.Chart:
+    """Render a finite distribution or an explicit empty/limited-data state."""
+
+    count = valid_count(record_count)
+    if count in (None, 0):
+        return _empty(title, "No records available.")
+    if count < minimum_records:
+        return _empty(title, f"Limited data · {count} records recorded.")
+    rows = [
+        {
+            "category": name,
+            "definition": OVERVIEW_DISTRIBUTION_DEFINITIONS.get(
+                name, "Recorded repository category."
+            ),
+            "value": value,
+        }
+        for name, raw in values.items()
+        if (value := valid_count(raw)) is not None
+    ]
+    if not rows:
+        return _empty(title, "No valid recorded counts available.")
+    category_order = [row["category"] for row in rows]
+    chart = (
+        alt.Chart(pd.DataFrame(rows))
+        .mark_bar(cornerRadiusEnd=3)
+        .encode(
+            x=alt.X(
+                "value:Q",
+                title="Recorded count",
+                axis=alt.Axis(format="d"),
+                scale=alt.Scale(
+                    domain=_finite_domain(row["value"] for row in rows)
+                ),
+                stack=None,
+            ),
+            y=alt.Y("category:N", sort="-x", title=None),
+            color=alt.Color(
+                "category:N",
+                legend=None,
+                scale=alt.Scale(
+                    domain=category_order,
+                    range=[
+                        COLORS[OVERVIEW_DISTRIBUTION_COLORS.get(category, "muted")]
+                        for category in category_order
+                    ],
+                ),
+            ),
+            tooltip=[
+                alt.Tooltip("category:N", title="Category"),
+                alt.Tooltip("definition:N", title="Definition"),
                 alt.Tooltip("value:Q", title="Count", format="d"),
             ],
         )

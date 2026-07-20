@@ -207,7 +207,7 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {{
   justify-content: space-between;
   margin-bottom: {SPACING_TOKENS[4]}px;
 }}
-.rdsa-page-header h1 {{
+.rdsa-page-header h1, .rdsa-page-title {{
   color: {COLOR_TOKENS['text_primary']};
   font-size: {TYPOGRAPHY_TOKENS['page_title']['size']}px;
   line-height: {TYPOGRAPHY_TOKENS['page_title']['line_height']}px;
@@ -258,9 +258,68 @@ textarea:focus-visible, select:focus-visible, [tabindex]:focus-visible {{
   width: 100%;
 }}
 .rdsa-score i {{ background: {COLOR_TOKENS['blue']}; display: block; height: 100%; }}
+.rdsa-priority-card {{
+  background: {COLOR_TOKENS['surface']};
+  border: {BORDER_TOKENS['default']};
+  border-left: 3px solid {COLOR_TOKENS['amber']};
+  border-radius: {RADIUS_TOKENS['md']}px;
+  margin: {SPACING_TOKENS[2]}px 0;
+  padding: {SPACING_TOKENS[3]}px {SPACING_TOKENS[4]}px;
+}}
+.rdsa-priority-head {{
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}}
+.rdsa-priority-excerpt {{
+  color: {COLOR_TOKENS['text_secondary']};
+  line-height: 1.45;
+  margin: {SPACING_TOKENS[2]}px 0;
+}}
+.rdsa-priority-facts {{
+  align-items: center;
+  color: {COLOR_TOKENS['text_muted']};
+  display: flex;
+  flex-wrap: wrap;
+  font-size: {TYPOGRAPHY_TOKENS['metadata']['size']}px;
+  gap: {SPACING_TOKENS[2]}px {SPACING_TOKENS[4]}px;
+}}
+.rdsa-budget-evidence {{
+  display: block;
+  color: {COLOR_TOKENS['text_muted']};
+  font-size: {TYPOGRAPHY_TOKENS['metadata']['size']}px;
+  line-height: {TYPOGRAPHY_TOKENS['metadata']['line_height']}px;
+  margin-top: {SPACING_TOKENS[1]}px;
+}}
+.rdsa-priority-reason {{
+  color: {COLOR_TOKENS['amber']};
+  font-size: {TYPOGRAPHY_TOKENS['metadata']['size']}px;
+  margin-top: {SPACING_TOKENS[2]}px;
+}}
+.rdsa-health-grid {{
+  display: grid;
+  gap: {SPACING_TOKENS[2]}px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}}
+.rdsa-health-fact {{
+  background: {COLOR_TOKENS['surface']};
+  border: {BORDER_TOKENS['default']};
+  border-radius: {RADIUS_TOKENS['sm']}px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: {SPACING_TOKENS[2]}px {SPACING_TOKENS[3]}px;
+}}
+.rdsa-health-fact strong {{
+  color: {COLOR_TOKENS['text_secondary']};
+  font-size: {TYPOGRAPHY_TOKENS['metadata']['size']}px;
+  overflow-wrap: anywhere;
+}}
 @media (max-width: 1180px) {{
   .rdsa-comparison-row {{ grid-template-columns: minmax(90px, .8fr) repeat(2, minmax(120px, 1fr)); }}
   .rdsa-comparison-result {{ grid-column: 2 / -1; }}
+  .rdsa-health-grid {{ grid-template-columns: 1fr; }}
 }}
 """
 
