@@ -268,14 +268,14 @@ def test_canary_simulation_4_apify_failure_no_retry(canary_env, monkeypatch):
     row = latest_row()
     assert row["status"] == "failed"
     assert token not in (row["sanitized_error"] or "")
-    assert "[REDACTED_TOKEN]" in (row["sanitized_error"] or "")
+    assert "[redacted]" in (row["sanitized_error"] or "")
     # No credential-like material leaked into the ledger blob. The genuine
     # secret is gone; only the redaction PLACEHOLDER (which literally contains
     # the word "token") remains, which is expected and safe.
     blob = json.dumps(row, default=str).lower()
     assert "secretaprilkey" not in blob
     assert "bot12345" not in blob
-    assert "[redacted_token]" in blob
+    assert "[redacted]" in blob
 
     # lock released, flags restored
     assert S.SchedulerLock(str(canary_env.lock)).status()["locked"] is False

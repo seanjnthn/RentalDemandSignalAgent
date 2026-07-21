@@ -288,7 +288,7 @@ def test_reconcile_sanitizes_reason(env):
                           reason="token bot123:SECRET and C:\\Users\\x path")
     assert res["reconciled"] is True
     assert "bot123:SECRET" not in res["interruption_reason"]
-    assert "[REDACTED_TOKEN]" in res["interruption_reason"]
+    assert "[redacted]" in res["interruption_reason"]
 
 
 # ---------------------------------------------------------------------------
