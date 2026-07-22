@@ -312,7 +312,8 @@ def validate_task_model(task: dict | None) -> AdapterAvailability:
         reasons.append("scheduled_send_optin")
     if task.get("cadence") != APPROVED_CADENCE:
         reasons.append("cadence")
-    execute = Path(str(task.get("execute") or "")).name.lower()
+    from pathlib import PureWindowsPath
+    execute = PureWindowsPath(str(task.get("execute") or "")).name.lower()
     if execute != "powershell.exe":
         reasons.append("executable_exact")
     args = str(task.get("arguments") or "")
@@ -346,7 +347,11 @@ def _extract_quoted_or_bare_arg(arguments: str, flag: str) -> str | None:
 def _norm_path(value: str | None) -> str:
     if not value:
         return ""
-    return str(Path(value)).replace("/", "\\").rstrip("\\").lower()
+    from pathlib import PureWindowsPath
+    try:
+        return str(PureWindowsPath(value)).rstrip("\\").lower()
+    except Exception:
+        return str(Path(value)).replace("/", "\\").rstrip("\\").lower()
 
 
 def connected_ports_if_enabled() -> OS.OperatorPorts:

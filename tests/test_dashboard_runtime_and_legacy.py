@@ -66,7 +66,7 @@ def test_streamlit_boots_without_pythonpath():
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     process = subprocess.Popen(
-        ["streamlit", "run", "dashboard/app.py", "--server.headless", "true", "--server.port", str(port)],
+        [sys.executable, "-m", "streamlit", "run", "dashboard/app.py", "--server.headless", "true", "--server.port", str(port)],
         cwd=ROOT, env=_env_without_pythonpath(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     output = ""

@@ -357,7 +357,7 @@ def get_task_control_state(ports: OperatorPorts | None = None) -> TaskControlSta
     exe = (task.get("execute") or "").replace("/", "\\").lower()
     if not exe.endswith(APPROVED_EXECUTABLE_SUFFIX):
         mismatches.append("execute")
-    if APPROVED_LAUNCHER.lower() not in (task.get("arguments") or "").lower():
+    if APPROVED_LAUNCHER.lower() not in (task.get("arguments") or "").lower().replace("/", "\\"):
         mismatches.append("launcher_script")
     if str(task.get("working_directory") or "").replace("/", "\\").rstrip("\\").lower() \
             != str(C.ROOT).replace("/", "\\").rstrip("\\").lower():
