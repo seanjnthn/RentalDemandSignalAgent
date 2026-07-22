@@ -55,10 +55,7 @@ class OperatorPorts:
     task_port: Callable[[str], Any] = field(
         default_factory=lambda: resolve_windows_task
     )
-    # set_task_enabled(name, enabled) -> bool  (real or fake)
-    task_set_port: Callable[[str, bool], bool] = field(
-        default_factory=lambda: set_windows_task_enabled
-    )
+
     # readiness_port() -> dict with keys {ready:bool, reasons:list[str]}
     # default combines state_port + inventory + repo checks.
     readiness_port: Callable[[], dict] = field(
@@ -85,6 +82,7 @@ class Readiness:
 class ScanResult:
     accepted: bool
     status: str
+    operation_id: str | None = None
     run_id: str | None = None
     message: str = ""
     error_code: str | None = None
@@ -93,6 +91,7 @@ class ScanResult:
         return {
             "accepted": self.accepted,
             "status": self.status,
+            "operation_id": self.operation_id,
             "run_id": self.run_id,
             "message": self.message,
             "error_code": self.error_code,
@@ -149,8 +148,6 @@ def not_connected_ports() -> "OperatorPorts":
         # No real Task Scheduler lookup; report the task as unregistered.
         return None
 
-    def _not_connected_set(name: str, enabled: bool) -> bool:
-        return False
 
     def _not_connected_manual(args):
         # Defensive: start_manual_scan is guarded by the page and by the
@@ -165,7 +162,6 @@ def not_connected_ports() -> "OperatorPorts":
         state_port=lambda: {"code_readiness": "unknown"},
         readiness_port=_not_connected_readiness,
         task_port=_not_connected_task,
-        task_set_port=_not_connected_set,
         audit_port=_not_connected_audit,
     )
 
@@ -249,7 +245,7 @@ def _default_readiness() -> dict:
 
 def _inventory_available() -> bool:
     try:
-        from .inventory import validate_real_inventory_for_scan
+        from rdsa.inventory import validate_real_inventory_for_scan
         _, report = validate_real_inventory_for_scan(C.INVENTORY_REAL_CSV)
         return bool(report.get("ok")) and bool(report.get("rows"))
     except Exception:
@@ -267,6 +263,7 @@ def start_manual_scan(
     *,
     confirm: bool,
     live_opt_in: bool = False,
+    operation_id: str | None = None,
     ports: OperatorPorts | None = None,
 ) -> ScanResult:
     """Run one manual scan reusing the existing scheduler pipeline.
@@ -285,16 +282,16 @@ def start_manual_scan(
     against Streamlit reruns / double-clicks).
     """
     ports = ports or OperatorPorts()
-    op_id = uuid.uuid4().hex[:8]
+    op_id = operation_id or uuid.uuid4().hex[:8]
 
     if not confirm:
         _audit(ports, op_id, "manual_scan_start", {},
                 {"accepted": False}, "refused", "missing_confirmation")
-        return ScanResult(accepted=False, status="refused",
+        return ScanResult(accepted=False, status="refused", operation_id=op_id,
                           message="Confirmation required to run a manual search.")
 
     if _live_opt_in:
-        return ScanResult(accepted=False, status="refused",
+        return ScanResult(accepted=False, status="refused", operation_id=op_id,
                           message="A manual launch was already accepted this session.")
 
     # Re-check readiness at execution time (fail-closed).
@@ -305,12 +302,14 @@ def start_manual_scan(
                 "refused", "readiness_failed")
         return ScanResult(
             accepted=False, status="refused",
+            operation_id=op_id,
             message="Readiness gate not met: " + "; ".join(readiness.reasons),
         )
 
     args = types.SimpleNamespace(
         confirm_scheduled_run=True,
         trigger_type=ports.trigger_type,
+        operation_id=op_id,
     )
     try:
         report = ports.manual_port(args)
@@ -319,16 +318,18 @@ def start_manual_scan(
         _audit(ports, op_id, "manual_scan_start", {},
                 {"accepted": False}, "failed", code,
                 sanitized_error=sanitized)
-        return ScanResult(accepted=False, status="failed",
+        return ScanResult(accepted=False, status="failed", operation_id=op_id,
                           error_code=code, message=sanitized)
 
     status = str(report.get("status"))
     run_id = report.get("run_id")
+    if not run_id:
+        run_id = report.get("operation_id")
     if status in ("refused", "blocked_cost_limit", "blocked_lock", "failed"):
         _audit(ports, op_id, "manual_scan_start", {},
                 {"accepted": False, "run_id": run_id, "status": status},
                 "refused", status)
-        return ScanResult(accepted=False, status=status, run_id=run_id,
+        return ScanResult(accepted=False, status=status, operation_id=op_id, run_id=run_id,
                           message=str(report.get("message", status)))
     # Accepted: lock the opt-in for the remainder of this process.
     _set_opt_in(True)
@@ -336,13 +337,13 @@ def start_manual_scan(
             {"accepted": True, "run_id": run_id, "status": status},
             "accepted", run_id=run_id)
     return ScanResult(
-        accepted=True, status=status, run_id=run_id,
+        accepted=True, status=status, operation_id=op_id, run_id=run_id,
         message=f"Manual search accepted. run_id={run_id}",
     )
 
 
 # ---------------------------------------------------------------------------
-# Recurring scan (enable / disable only)
+# Installed Windows Scheduled Task (read-only evidence only)
 # ---------------------------------------------------------------------------
 def get_task_control_state(ports: OperatorPorts | None = None) -> TaskControlState:
     ports = ports or OperatorPorts()
@@ -379,103 +380,6 @@ def get_task_control_state(ports: OperatorPorts | None = None) -> TaskControlSta
         next_run=task.get("next_run"),
         cadence=task.get("cadence"),
     )
-
-
-def set_recurring_scan_enabled(
-    enabled: bool,
-    *,
-    confirm: bool,
-    op_id: str | None = None,
-    ports: OperatorPorts | None = None,
-) -> dict:
-    """Enable or disable the existing recurring scan task (state flip only).
-
-    Blocks when the task is missing, mismatched, or carries a scheduled-send
-    opt-in. Repeated enable/disable on the same state is a safe no-op.
-    Never installs, recreates, repairs, or edits the task; disabling never
-    terminates a running process. Records an audit event.
-    """
-    ports = ports or OperatorPorts()
-    op_id = op_id or uuid.uuid4().hex[:8]
-    state = get_task_control_state(ports)
-
-    if not state.exists:
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"exists": False}, "refused", "task_not_registered")
-        return {"ok": False, "outcome": "refused",
-                "reason": "task_not_registered",
-                "message": "Scheduled task is not registered."}
-    if not confirm:
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"exists": True, "valid": state.valid}, "refused",
-                "missing_confirmation")
-        return {"ok": False, "outcome": "refused",
-                "reason": "missing_confirmation",
-                "message": "Confirmation required."}
-    if state.carries_scheduled_send:
-        # Security-specific blocker: a recurring scan must never carry a
-        # scheduled-send opt-in. Checked BEFORE the generic validity gate so
-        # this result is never masked by an unrelated definition mismatch
-        # (executable, RepoRoot, working-directory, or trigger-mode).
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"carries_scheduled_send": True}, "refused",
-                "scheduled_send_optin_present")
-        return {"ok": False, "outcome": "refused",
-                "reason": "scheduled_send_optin_present",
-                "message": "Task carries a scheduled-send opt-in; blocked."}
-    if not state.valid:
-        # Generic definition-mismatch blocker (only reached when no
-        # scheduled-send opt-in is present).
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"exists": True, "mismatches": state.mismatches},
-                "refused", "task_definition_mismatch")
-        return {"ok": False, "outcome": "refused",
-                "reason": "task_definition_mismatch",
-                "mismatches": state.mismatches,
-                "message": "Task definition differs from the approved definition."}
-
-    # Idempotency: same state requested -> safe no-op.
-    if state.enabled == enabled:
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"previous_enabled": state.enabled}, "noop",
-                "already_" + ("enabled" if enabled else "disabled"))
-        return {"ok": True, "outcome": "noop",
-                "previous_state": "enabled" if state.enabled else "disabled",
-                "resulting_state": "enabled" if state.enabled else "disabled",
-                "message": "Task already in the requested state."}
-
-    previous = "enabled" if state.enabled else "disabled"
-    try:
-        changed = ports.task_set_port(APPROVED_TASK_NAME, enabled)
-    except Exception as exc:
-        code, sanitized = S.sanitize_error(exc)
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"previous_enabled": state.enabled}, "failed", code,
-                sanitized_error=sanitized)
-        return {"ok": False, "outcome": "failed", "error_code": code,
-                "message": sanitized}
-    if not changed:
-        _audit(ports, op_id, "recurring_set",
-                {"requested_enabled": enabled},
-                {"previous_enabled": state.enabled}, "failed",
-                "task_set_failed")
-        return {"ok": False, "outcome": "failed",
-                "reason": "task_set_failed",
-                "message": "Task state change was not applied."}
-    resulting = "enabled" if enabled else "disabled"
-    _audit(ports, op_id, "recurring_set",
-            {"requested_enabled": enabled},
-            {"previous_state": previous, "resulting_state": resulting},
-            "accepted")
-    return {"ok": True, "outcome": "accepted",
-            "previous_state": previous, "resulting_state": resulting,
-            "message": f"Recurring scan {resulting}."}
 
 
 # ---------------------------------------------------------------------------
@@ -640,23 +544,3 @@ def resolve_windows_task(name: str) -> dict | None:
         "cadence": "daily" if trigger_mode == "daily_schedule" else (
             "weekly" if trigger_mode == "scheduled_canary" else None),
     }
-
-
-def set_windows_task_enabled(name: str, enabled: bool) -> bool:
-    """Enable or disable the task by name (state flip only). Windows only."""
-    import shutil
-    import subprocess
-
-    ps = shutil.which("powershell") or shutil.which("pwsh")
-    if ps is None:
-        return False
-    verb = "Enable-ScheduledTask" if enabled else "Disable-ScheduledTask"
-    script = "%s -TaskName '%s' -ErrorAction Stop" % (verb, name)
-    try:
-        cp = subprocess.run(
-            [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True, text=True, timeout=30,
-        )
-    except Exception:
-        return False
-    return cp.returncode == 0

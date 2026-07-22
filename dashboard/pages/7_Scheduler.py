@@ -3,10 +3,9 @@
 The upper Scheduler status area remains STRICTLY READ-ONLY (unchanged
 observability: code readiness, lock, ledger, cost, interruption recovery).
 
-The new 'Operator controls' section adds two scan-only, confirmation-gated
-Streamlit forms:
+The 'Operator controls' section adds one scan-only, confirmation-gated
+Streamlit form:
   - Run lead search now (reuses the existing scheduler pipeline)
-  - Enable / disable the existing recurring scan schedule
 
 The page never imports subprocess, PowerShell, or Windows APIs directly.
 All side effects go through dashboard.operator_service, whose ports are
@@ -14,6 +13,7 @@ dependency-injected (tests inject fakes; no real Apify / Telegram /
 Task Scheduler call is made on import or on render).
 """
 import sys
+import uuid
 from pathlib import Path
 
 _ROOT = str(Path(__file__).resolve().parents[2])
@@ -41,6 +41,12 @@ def _ports() -> OperatorPorts:
     injected = st.session_state.get("_operator_ports")
     if isinstance(injected, OperatorPorts):
         return injected
+    if getattr(C, "DASHBOARD_OPERATOR_CONTROLS_ENABLED", False):
+        try:
+            from dashboard.operator_adapters import connected_ports_if_enabled
+            return connected_ports_if_enabled()
+        except Exception:
+            return OS.not_connected_ports()
     return OS.not_connected_ports()
 
 
@@ -160,6 +166,7 @@ def _render_scan_result(result: "OS.ScanResult") -> None:
     d = result.to_dict()
     if d.get("accepted"):
         st.session_state["_last_scan_run_id"] = d.get("run_id")
+        st.session_state["_manual_operation_accepted"] = True
         st.success(d.get("message") or "Manual search accepted.")
     elif d.get("status") == "failed":
         st.error(f"[{d.get('error_code')}] {d.get('message')}")
@@ -167,31 +174,13 @@ def _render_scan_result(result: "OS.ScanResult") -> None:
         st.warning(d.get("message") or "Manual search was not started.")
 
 
-def _render_task_result(res: dict, verb: str) -> None:
-    if not res.get("ok"):
-        reason = res.get("reason")
-        if reason == "task_not_registered":
-            st.error(res.get("message"))
-        elif reason in ("task_definition_mismatch", "scheduled_send_optin_present"):
-            st.error(res.get("message"))
-        elif reason == "missing_confirmation":
-            st.warning(res.get("message"))
-        else:
-            st.error(res.get("message"))
-        return
-    if res.get("outcome") == "noop":
-        st.info(res.get("message"))
-    else:
-        st.success(res.get("message"))
-
-
 # ===========================================================================
-# OPERATOR CONTROLS (scan-only, confirmation-gated, visually separate)
+# OPERATOR CONTROLS (manual scan only, confirmation-gated, visually separate)
 # ===========================================================================
 st.divider()
 st.markdown("### Operator controls")
 st.caption("Scan-only. Every action requires an explicit confirmation. "
-           "The next scheduled scan remains scan-only (no Telegram delivery).")
+           "Telegram delivery is Off. Recurring enable/disable controls are deferred.")
 
 
 # ---- Manual lead search ------------------------------------------------------
@@ -202,31 +191,44 @@ with st.container(border=True):
     ports = _ports()
     readiness = OS.get_manual_run_readiness(ports)
     ready = readiness.ready
+    task = OS.get_task_control_state(ports)
 
     # Cost / usage readouts (read-only evidence).
     projected = float(status.get("monthly_usage_usd", 0.0)) + float(C.SCHEDULER_MAX_CHARGE_USD)
-    m1, m2, m3, m4, m5 = st.columns(5)
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Monthly usage (USD)", f"{status.get('monthly_usage_usd', 0.0):.3f}")
-    m2.metric("Stop threshold (USD)", f"{status.get('stop_usd', 0.0):.3f}")
-    m3.metric("Projected max (USD)", f"{projected:.3f}")
-    m4.metric("Active lock", "held" if status.get("lock", {}).get("locked") else "free")
+    m2.metric("Projected maximum cost (USD)", f"{projected:.3f}")
+    m3.metric("Warn threshold (USD)", f"{status.get('warn_usd', 0.0):.3f}")
+    m4.metric("Stop threshold (USD)", f"{status.get('stop_usd', 0.0):.3f}")
     unresolved = any(r.get("reconciliation") == "required" for r in (status.get("interrupted_runs") or []))
-    m5.metric("Unresolved run", "yes" if unresolved else "no")
+    m5.metric("Lock state", "held" if status.get("lock", {}).get("locked") else "free")
+    m6.metric("Unresolved-run state", "yes" if unresolved else "no")
+
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Mode", "Scan only")
+    r2.metric("Telegram delivery", "Off")
+    r3.metric("Credentials/configuration readiness", "ready" if ready else "blocked")
+    r4.metric("Installed task state", "Enabled" if task.enabled else ("Disabled" if task.exists else "Not registered"))
 
     if not ready:
         st.warning("Manual search is disabled: " + "; ".join(readiness.reasons))
 
     with st.form("manual_search_form"):
+        st.session_state.setdefault("_manual_operation_id", uuid.uuid4().hex[:12])
         st.checkbox("I confirm a manual scan now (scan only, no delivery).",
                     value=False, key="manual_confirm")
         submitted = st.form_submit_button(
             "Run search now",
             type="primary",
-            disabled=not ready,
+            disabled=(not ready) or bool(st.session_state.get("_manual_operation_accepted")),
         )
         if submitted:
             confirm = bool(st.session_state.get("manual_confirm", False))
-            result = OS.start_manual_scan(confirm=confirm, ports=ports)
+            result = OS.start_manual_scan(
+                confirm=confirm,
+                operation_id=st.session_state.get("_manual_operation_id"),
+                ports=ports,
+            )
             _render_scan_result(result)
 
     # Read-only poll of the last accepted run, when one exists.
@@ -235,62 +237,21 @@ with st.container(border=True):
                    "— poll its status on the Scheduler read-only area above.")
 
 
-# ---- Recurring scan schedule -------------------------------------------------
 with st.container(border=True):
-    st.subheader("Recurring scan schedule")
-    st.caption("Enable or disable the existing Windows Scheduled Task. "
-               "Verifies the approved task definition; never edits the task.")
-
+    st.subheader("Installed Windows Scheduled Task (read-only)")
+    st.caption("Recurring schedule controls are deferred. The dashboard only displays the installed task state; it never enables, disables, starts, recreates, repairs, or modifies the task.")
     task = OS.get_task_control_state(ports)
     t1, t2, t3, t4 = st.columns(4)
     t1.metric("Task name", task.name)
     if task.exists:
-        t2.metric("State", "Enabled" if task.enabled else "Disabled")
+        t2.metric("Task Enabled/Disabled", "Enabled" if task.enabled else "Disabled")
         t3.metric("Cadence", task.cadence or "unknown")
         t4.metric("Next run", task.next_run or "n/a")
     else:
-        t2.metric("State", "Not registered")
+        t2.metric("Task Enabled/Disabled", "Not registered")
         t3.metric("Cadence", "n/a")
         t4.metric("Next run", "n/a")
-
     if task.exists and not task.valid:
-        st.error("Task definition mismatch: " + "; ".join(task.mismatches)
-                  + " — operator must reconcile out-of-band; controls blocked.")
+        st.warning("Task definition evidence differs from the approved read-only model: " + "; ".join(task.mismatches))
     if task.carries_scheduled_send:
-        st.error("Task carries a scheduled-send opt-in; blocked.")
-
-    task_blocked = (not task.exists) or (not task.valid) or task.carries_scheduled_send
-
-    can_enable = task.exists and task.valid and not task.carries_scheduled_send and not task.enabled
-    can_disable = task.exists and task.valid and not task.carries_scheduled_send and task.enabled
-
-    col_en, col_dis = st.columns(2)
-    with col_en:
-        with st.form("recurring_enable_form"):
-            st.checkbox("I confirm enabling the existing recurring scan (scan only).",
-                        value=False, key="enable_confirm")
-            en_sub = st.form_submit_button(
-                "Enable recurring scan",
-                type="primary",
-                disabled=not can_enable,
-            )
-            if en_sub:
-                confirm = bool(st.session_state.get("enable_confirm", False))
-                res = OS.set_recurring_scan_enabled(True, confirm=confirm, ports=ports)
-                _render_task_result(res, "Enable")
-    with col_dis:
-        with st.form("recurring_disable_form"):
-            st.checkbox("I confirm disabling the existing recurring scan.",
-                        value=False, key="disable_confirm")
-            dis_sub = st.form_submit_button(
-                "Disable recurring scan",
-                disabled=not can_disable,
-            )
-            if dis_sub:
-                confirm = bool(st.session_state.get("disable_confirm", False))
-                res = OS.set_recurring_scan_enabled(False, confirm=confirm, ports=ports)
-                _render_task_result(res, "Disable")
-
-    if task_blocked:
-        st.caption("Recurring-scan controls are blocked (see messages above). "
-                   "No task is created, edited, or run from this page.")
+        st.error("Task evidence carries a scheduled-send opt-in. This dashboard still exposes no task mutation control.")
