@@ -6,8 +6,8 @@ and no Task Scheduler mutation ever occurs. The page module is imported
 with an injected OperatorPorts via st.session_state to prove the dashboard
 performs no real action on import or render.
 
-Covers: readiness gates, idempotent manual scan, recurring enable/disable,
-task validation, audit sanitization, and page-import / no-action invariants.
+Covers: readiness gates, idempotent manual scan, read-only installed-task
+evidence, audit sanitization, and page-import / no-action invariants.
 """
 from __future__ import annotations
 
@@ -135,18 +135,9 @@ def _task_model(name="RentalDemandSignalAgent-Daily", enabled=True,
 class FakeTaskPorts:
     def __init__(self, model=None, set_result=True):
         self.model = model
-        self.set_result = set_result
-        self.set_calls = []
 
     def resolve(self, name):
         return self.model
-
-    def set_enabled(self, name, enabled):
-        self.set_calls.append((name, enabled))
-        # Mutate the model so subsequent control-state reads reflect the flip.
-        if self.model is not None:
-            self.model["enabled"] = enabled
-        return self.set_result
 
 
 def make_ports(manual=None, task_model=None, task_set_result=True,
@@ -175,7 +166,6 @@ def make_ports(manual=None, task_model=None, task_set_result=True,
         state_port=lambda: snap,
         readiness_port=lambda: readiness,
         task_port=task_ports.resolve,
-        task_set_port=task_ports.set_enabled,
         audit_port=fake_audit,
     ), fake_manual, fake_audit
 
@@ -344,7 +334,7 @@ def test_no_env_mutation(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Recurring scan control
+# Installed task read-only evidence
 # ---------------------------------------------------------------------------
 def test_expected_task_validation_passes():
     ports, _, _ = make_ports(task_model=_task_model(enabled=False))
@@ -353,96 +343,32 @@ def test_expected_task_validation_passes():
     assert st.carries_scheduled_send is False
 
 
-def test_mismatched_task_action_blocked():
+def test_mismatched_task_action_reported_read_only():
     model = _task_model()
     model["execute"] = "C:\\python.exe"  # wrong executable
     ports, _, _ = make_ports(task_model=model)
     st = OS.get_task_control_state(ports)
     assert st.valid is False
     assert "execute" in st.mismatches
-    res = OS.set_recurring_scan_enabled(True, confirm=True, ports=ports)
-    assert res["ok"] is False
-    assert res["reason"] == "task_definition_mismatch"
 
 
-def test_task_with_scheduled_send_argument_blocked():
+def test_task_with_scheduled_send_argument_reported_read_only():
     ports, _, _ = make_ports(task_model=_task_model(carries_send=True))
     st = OS.get_task_control_state(ports)
     assert st.carries_scheduled_send is True
     assert "scheduled_send_optin" in st.mismatches
-    res = OS.set_recurring_scan_enabled(True, confirm=True, ports=ports)
-    assert res["ok"] is False
-    assert res["reason"] == "scheduled_send_optin_present"
 
 
-def test_enable_existing_disabled_task():
-    manual = FakeManualPort()
-    ports, _, audit = make_ports(task_model=_task_model(enabled=False))
-    res = OS.set_recurring_scan_enabled(True, confirm=True, ports=ports)
-    assert res["ok"] is True
-    assert res["outcome"] == "accepted"
-    assert res["previous_state"] == "disabled"
-    assert res["resulting_state"] == "enabled"
-    assert audit.rows[-1]["action"] == "recurring_set"
-
-
-def test_disable_existing_enabled_task():
-    ports, _, audit = make_ports(task_model=_task_model(enabled=True))
-    res = OS.set_recurring_scan_enabled(False, confirm=True, ports=ports)
-    assert res["ok"] is True
-    assert res["outcome"] == "accepted"
-    assert res["resulting_state"] == "disabled"
-
-
-def test_repeated_enable_noop():
-    ports, _, _ = make_ports(task_model=_task_model(enabled=True))
-    res = OS.set_recurring_scan_enabled(True, confirm=True, ports=ports)
-    assert res["ok"] is True
-    assert res["outcome"] == "noop"
-    assert res["previous_state"] == "enabled"
-    assert res["resulting_state"] == "enabled"
-
-
-def test_repeated_disable_noop():
-    ports, _, _ = make_ports(task_model=_task_model(enabled=False))
-    res = OS.set_recurring_scan_enabled(False, confirm=True, ports=ports)
-    assert res["ok"] is True
-    assert res["outcome"] == "noop"
-    assert res["previous_state"] == "disabled"
-    assert res["resulting_state"] == "disabled"
-
-
-def test_recurring_requires_confirmation():
-    ports, _, _ = make_ports(task_model=_task_model(enabled=False))
-    res = OS.set_recurring_scan_enabled(True, confirm=False, ports=ports)
-    assert res["ok"] is False
-    assert res["reason"] == "missing_confirmation"
-
-
-def test_missing_task_blocked():
+def test_missing_task_reported_read_only():
     ports, _, _ = make_ports(task_model=None)
     st = OS.get_task_control_state(ports)
     assert st.exists is False
-    res = OS.set_recurring_scan_enabled(True, confirm=True, ports=ports)
-    assert res["ok"] is False
-    assert res["reason"] == "task_not_registered"
 
 
-def test_disabling_does_not_terminate_process():
-    # The fake set_enabled only flips state; no kill/terminate is invoked.
-    model = _task_model(enabled=True)
-    fake_task = FakeTaskPorts(model, set_result=True)
-    ports = OperatorPorts(
-        task_port=fake_task.resolve,
-        task_set_port=fake_task.set_enabled,
-        audit_port=FakeAudit(),
-    )
-    res = OS.set_recurring_scan_enabled(False, confirm=True, ports=ports)
-    assert res["ok"] is True
-    assert len(fake_task.set_calls) == 1
-    assert fake_task.set_calls[0] == ("RentalDemandSignalAgent-Daily", False)
-    # Model state flipped but no process object was ever touched.
-    assert model["enabled"] is False
+def test_no_windows_task_mutation_method_reachable():
+    assert not hasattr(OS, "set_recurring_scan_enabled")
+    ports, _, _ = make_ports(task_model=_task_model(enabled=True))
+    assert not hasattr(ports, "task_set_port")
 
 
 # ---------------------------------------------------------------------------
@@ -483,7 +409,7 @@ def test_failed_action_records_sanitized_failure():
 
 def test_no_token_chatid_or_author_exposure_in_audit():
     ports, _, audit = make_ports(task_model=_task_model(enabled=False))
-    OS.set_recurring_scan_enabled(True, confirm=True, ports=ports)
+    OS.start_manual_scan(confirm=False, ports=ports, operation_id="safe-op")
     blob = str(audit.rows)
     assert "TELEGRAM_BOT_TOKEN" not in blob
     assert "APIFY_API_TOKEN" not in blob

@@ -13,9 +13,9 @@ Verification covers the Phase C1 operator-control acceptance criteria:
   - missing confirmation causes no adapter call;
   - accepted confirmed submission causes exactly one fake call;
   - a rerun with the same operation ID causes no second call (idempotent);
-  - enable/disable state is understandable;
-  - malformed task definition blocks both controls;
-  - a forbidden scheduled-send argument is shown as a blocking reason;
+  - installed task state is visible but read-only;
+  - malformed task definition is reported without mutation controls;
+  - a forbidden scheduled-send argument is shown as read-only evidence;
   - no raw token / chat ID / private author / env value / provider response leaks;
   - browser console has zero warnings and zero errors (no uncaught exceptions /
     tracebacks from the page script).
@@ -119,15 +119,10 @@ def _fake_ports(readiness=None, task_model=None, record=None, fail_manual=False)
             )
         return {"status": "completed", "run_id": "man-x-" + str(record["manual"])}
 
-    def _set(name, enabled):
-        record["set"] += 1
-        return True
-
     readiness = readiness or {"ready": True, "reasons": []}
     return OperatorPorts(
         manual_port=_manual,
         task_port=_task,
-        task_set_port=_set,
         readiness_port=lambda: readiness,
         audit_port=lambda row: None,
         state_port=lambda: {"lock": {"locked": False}, "interrupted_runs": []},
@@ -171,6 +166,28 @@ def test_page_load_is_fail_closed_without_injection():
     blob = _audit_blob(at)
     assert "Code readiness" in blob
     assert "Scheduler" in blob
+
+
+def test_feature_flag_true_with_valid_adapters_displays_readiness(monkeypatch):
+    from rdsa import config as C
+    import dashboard.operator_adapters as OA
+
+    record = {"manual": 0, "set": 0}
+    ports = _fake_ports(record=record, task_model={"enabled": False})
+    monkeypatch.setattr(C, "DASHBOARD_OPERATOR_CONTROLS_ENABLED", True)
+    monkeypatch.setattr(OA, "connected_ports_if_enabled", lambda: ports)
+
+    at = _run(ports=None)
+    blob = _audit_blob(at)
+    assert "Run lead search" in blob
+    assert "Disabled" in blob
+    at.checkbox(key="manual_confirm").set_value(True)
+    _button(at, "Run search now").click().run()
+    assert record["manual"] == 1
+    assert "Enable recurring scan" not in _audit_blob(at)
+    assert "Disable recurring scan" not in _audit_blob(at)
+    assert record["set"] == 0
+    assert len(at.exception) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -258,45 +275,39 @@ def test_rerun_same_operation_id_no_second_call():
 
 
 # ---------------------------------------------------------------------------
-# Enable / disable state understanding + malformed-task blocking
+# Installed task is visible but read-only
 # ---------------------------------------------------------------------------
-def test_enable_disable_state_understandable_when_enabled():
+def test_installed_task_state_visible_when_enabled():
     ports = _fake_ports(task_model={"enabled": True})
     at = _run(ports)
     blob = _audit_blob(at)
-    # Current state is shown.
+    assert "Installed Windows Scheduled Task (read-only)" in blob
     assert "Enabled" in blob
-    # With task enabled, "Enable" is disabled and "Disable" is available.
-    enable_btn = _button(at, "Enable recurring scan")
-    disable_btn = _button(at, "Disable recurring scan")
-    assert enable_btn.disabled is True
-    assert disable_btn.disabled is False
+    assert "Cadence" in blob
+    assert "Enable recurring scan" not in blob
+    assert "Disable recurring scan" not in blob
 
 
-def test_enable_disable_state_understandable_when_disabled():
+def test_installed_task_state_visible_when_disabled():
     ports = _fake_ports(task_model={"enabled": False})
     at = _run(ports)
     blob = _audit_blob(at)
     assert "Disabled" in blob
-    enable_btn = _button(at, "Enable recurring scan")
-    disable_btn = _button(at, "Disable recurring scan")
-    assert enable_btn.disabled is False
-    assert disable_btn.disabled is True
+    assert "Task Enabled/Disabled" in blob
+    assert "Enable recurring scan" not in blob
+    assert "Disable recurring scan" not in blob
 
 
-def test_malformed_task_definition_blocks_both_controls():
-    # Trigger-mode mismatch makes the definition invalid -> both controls blocked.
+def test_malformed_task_definition_reported_without_controls():
     ports = _fake_ports(task_model={"enabled": True, "trigger_mode": "weekly"})
     at = _run(ports)
     blob = _audit_blob(at)
-    assert "Task definition mismatch" in blob
-    enable_btn = _button(at, "Enable recurring scan")
-    disable_btn = _button(at, "Disable recurring scan")
-    assert enable_btn.disabled is True
-    assert disable_btn.disabled is True
+    assert "Task definition evidence differs" in blob
+    assert "Enable recurring scan" not in blob
+    assert "Disable recurring scan" not in blob
 
 
-def test_scheduled_send_argument_shown_as_blocking_reason():
+def test_scheduled_send_argument_shown_as_read_only_evidence():
     ports = _fake_ports(task_model={
         "enabled": True,
         "arguments": (
@@ -308,11 +319,8 @@ def test_scheduled_send_argument_shown_as_blocking_reason():
     at = _run(ports)
     blob = _audit_blob(at)
     assert "scheduled-send" in blob.lower()
-    # Both recurring controls remain blocked.
-    enable_btn = _button(at, "Enable recurring scan")
-    disable_btn = _button(at, "Disable recurring scan")
-    assert enable_btn.disabled is True
-    assert disable_btn.disabled is True
+    assert "Enable recurring scan" not in blob
+    assert "Disable recurring scan" not in blob
 
 
 def test_failed_manual_scan_is_sanitized_and_no_leak():
