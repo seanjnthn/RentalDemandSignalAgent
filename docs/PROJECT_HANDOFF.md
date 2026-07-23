@@ -802,6 +802,80 @@ compatibility. `tests/test_dashboard_repository.py` hardened to isolate the lock
 **Rollback tag:** `v0.7.4-interrupted-run-recovery` (annotated, points at the `--no-ff` merge of
 `fix/v074-interrupted-run-recovery` into `main`).
 
+### 8.17. v0.8.0 manual dashboard scan canary (live-validated, 2026-07-22)
+
+**Branch:** `feature/v080-real-operator-adapters` (commit `d36407e`)
+
+**Canary purpose:** Validate that the dashboard's manual "Run lead search" button can safely trigger
+a real Apify scan with all safety gates intact, and that the inventory readiness bug fix
+(`report.get("rows")` → `report.get("accepted_rows")`) resolves the false-negative gate.
+
+**Canary run:**
+- **Operation ID:** `cea91d85`
+- **Run ID:** `sch-20260722T095641Z-3cd6d106`
+- **Trigger:** `dashboard_manual`
+- **Status:** `completed`
+- **New leads:** 5 (127 → 132)
+- **Classifications:** qualified_lead ×3, watch ×1, agent_broker ×1
+- **Telegram:** 0 calls (send flag remained `false`)
+- **Actual cost:** $0.045 (Apify `usageTotalUsd`)
+- **Monthly usage:** $1.230 → $1.275
+
+**Pre-canary attempts (audit-only):**
+- `sch-20260722T095147Z-5cb8f4aa`: `failed` / `apify_error` / `APIFY_API_TOKEN is required...`
+- `sch-20260722T095322Z-b3509a51`: `failed` / `apify_error` / `APIFY_API_TOKEN is required...`
+These rows were logged to `scheduled_runs` as an audit trail, but no Apify call occurred. The token
+check happens in `ApifyThreadsProvider.__init__()` before the API call. The rows serve as evidence
+that the operator attempted to run but was blocked by missing credentials.
+
+**Cost provenance:**
+The `usage_total_usd` field in `scheduled_runs` stores `config.SCHEDULER_MAX_CHARGE_USD` ($0.10) —
+the **configured maximum charge cap**, not the actual Apify cost. The actual cost ($0.045) is tracked
+in `data/apify_usage.json` via `MonthlyUsageGuard.record_run()`:
+- `actual_usd`: incremented by Apify-reported `usageTotalUsd` (real cost)
+- `estimated_usd`: incremented by `SCHEDULER_MAX_CHARGE_USD` (configured cap)
+
+The dashboard displays `max_charge_usd` from config, not `actual_usd`. This is a documentation
+issue, not a code bug — the label could be clarified to "Max charge cap" vs "Actual cost".
+
+**Inventory readiness bug fix:**
+`_inventory_available()` in `dashboard/operator_service.py` line 250 was checking
+`report.get("rows")` instead of `report.get("accepted_rows")`. Fixed and verified by the canary
+(successful scan after fix). Regression tests added in `tests/test_inventory_readiness.py` (7 tests).
+
+**Security verification:**
+- Token absent from git diff ✅
+- Token absent from tracked files ✅
+- Token absent from audit output ✅
+- Token absent from runtime logs ✅
+- Token absent from UI output ✅
+- Shell history: Token may be present (user provided via paste) — **rotation recommended**
+
+**Test coverage:**
+- Full suite: 388 passed, 20 skipped, 0 failed
+- Readiness tests: 7 passed (all inventory gate scenarios)
+- Operator adapter tests: 12 passed
+- Dashboard operator tests: 15 passed
+- Scheduler/security tests: 9 passed
+
+**Database state (post-canary):**
+- leads: 132
+- alerts: 3 (unchanged)
+- delivery_claims: 7 (unchanged)
+- scheduled_runs: 5
+- scheduled_run_leads: 5
+- active lock: None
+- running scan: None
+
+**Operator approval:**
+Manual dashboard scan is **approved for normal operator use** with:
+1. Inventory readiness bug fix applied ✅
+2. Regression test coverage added ✅
+3. Cost provenance documented ✅
+
+**Rollback:** Revert commit `d36407e` to remove the manual scan button. The underlying scheduler
+pipeline (v0.7.x) remains unchanged.
+
 ## 11. Rollback
 
 Safe tags exist:

@@ -188,6 +188,71 @@ Do not perform this during implementation. When explicitly approved later:
 
 ---
 
+## 10. Canary Results (2026-07-22)
+
+**Operation ID:** `cea91d85`<br>
+**Run ID:** `sch-20260722T095641Z-3cd6d106`<br>
+**Status:** `completed`<br>
+**New leads:** 5 (127 → 132)<br>
+**Classifications:** qualified_lead ×3, watch ×1, agent_broker ×1<br>
+**Telegram:** 0 calls (send flag remained `false`)<br>
+**Actual cost:** $0.045 (Apify `usageTotalUsd`)<br>
+**Monthly usage:** $1.230 → $1.275
+
+### Inventory Readiness Bug Fix
+
+**Issue:** `_inventory_available()` in `dashboard/operator_service.py` line 250 was checking
+`report.get("rows")` instead of `report.get("accepted_rows")`. This caused the readiness gate to
+return `False` even when valid inventory was present.
+
+**Fix:** Changed to `report.get("accepted_rows")`. Verified by the canary (successful scan after fix).
+
+**Regression tests:** Added `tests/test_inventory_readiness.py` (7 tests covering all inventory gate
+scenarios: valid accepted_rows, empty, missing, false ok flag, mixed valid/invalid, all synthetic,
+malformed report).
+
+### Cost Provenance
+
+The `usage_total_usd` field in `scheduled_runs` stores `config.SCHEDULER_MAX_CHARGE_USD` ($0.10) —
+the **configured maximum charge cap**, not the actual Apify cost. The actual cost ($0.045) is tracked
+in `data/apify_usage.json` via `MonthlyUsageGuard.record_run()`:
+
+- `actual_usd`: incremented by Apify-reported `usageTotalUsd` (real cost)
+- `estimated_usd`: incremented by `SCHEDULER_MAX_CHARGE_USD` (configured cap)
+
+The dashboard displays `max_charge_usd` from config, not `actual_usd`. This is a documentation
+issue, not a code bug — the label could be clarified to "Max charge cap" vs "Actual cost".
+
+### Pre-Canary Attempts (Audit Only)
+
+Two attempts failed before reaching Apify:
+
+- `sch-20260722T095147Z-5cb8f4aa`: `failed` / `apify_error` / `APIFY_API_TOKEN is required...`
+- `sch-20260722T095322Z-b3509a51`: `failed` / `apify_error` / `APIFY_API_TOKEN is required...`
+
+These rows were logged to `scheduled_runs` as an audit trail, but no Apify call occurred. The token
+check happens in `ApifyThreadsProvider.__init__()` before the API call. The rows serve as evidence
+that the operator attempted to run but was blocked by missing credentials.
+
+### Security Verification
+
+- Token absent from git diff ✅
+- Token absent from tracked files ✅
+- Token absent from audit output ✅
+- Token absent from runtime logs ✅
+- Token absent from UI output ✅
+- Shell history: Token may be present (user provided via paste) — **rotation recommended**
+
+### Operator Approval
+
+Manual dashboard scan is **approved for normal operator use** with:
+
+1. Inventory readiness bug fix applied ✅
+2. Regression test coverage added ✅
+3. Cost provenance documented ✅
+
+---
+
 ## 9. Rollback procedure
 
 1. Stop the Streamlit process.

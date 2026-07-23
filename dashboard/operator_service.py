@@ -247,7 +247,7 @@ def _inventory_available() -> bool:
     try:
         from rdsa.inventory import validate_real_inventory_for_scan
         _, report = validate_real_inventory_for_scan(C.INVENTORY_REAL_CSV)
-        return bool(report.get("ok")) and bool(report.get("rows"))
+        return bool(report.get("ok")) and bool(report.get("accepted_rows"))
     except Exception:
         return False
 
