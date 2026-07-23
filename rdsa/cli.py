@@ -194,6 +194,7 @@ def main(argv=None):
     l=sub.add_parser('list');l.add_argument('--class',dest='klass'); st=sub.add_parser('status');st.add_argument('post_id');st.add_argument('new_status');sub.add_parser('match');sub.add_parser('notify');sub.add_parser('reprocess');sub.add_parser('purge')
     sr=sub.add_parser('scheduled-run'); sr.add_argument('--confirm-scheduled-run',action='store_true',help='explicit confirmation required to execute a scheduled run')
     sr.add_argument('--trigger-type',choices=['manual','scheduled_canary','daily_schedule'],default='daily_schedule')
+    dm=sub.add_parser('dashboard-manual-scan'); dm.add_argument('--operation-id',required=True); dm.add_argument('--confirm-run',action='store_true',help='explicit confirmation required to execute dashboard manual scan')
     ss=sub.add_parser('scheduler-status')
     su=sub.add_parser('scheduler-unlock'); su.add_argument('--confirm-unlock',action='store_true',help='explicit confirmation required to clear a lock')
     sr2=sub.add_parser('scheduler-reconcile'); sr2.add_argument('--run-id',required=True,help='run_id of the interrupted scheduled run to reconcile')
@@ -211,6 +212,10 @@ def main(argv=None):
     elif a.cmd=='scheduled-run':
         from .scheduler import run_scheduled_run
         report = run_scheduled_run(a)
+        print(json.dumps(report, indent=2, default=str))
+    elif a.cmd=='dashboard-manual-scan':
+        from dashboard.operator_adapters import execute_dashboard_manual_scan
+        report = execute_dashboard_manual_scan(a.operation_id, confirm_run=getattr(a,'confirm_run',False))
         print(json.dumps(report, indent=2, default=str))
     elif a.cmd=='scheduler-status':
         from .scheduler import SchedulerLock, latest_run, last_successful_run, read_usage_safe

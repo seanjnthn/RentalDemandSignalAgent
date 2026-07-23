@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import config
-from .notifier import preview_eligible, send_lead_cards, TelegramNotifier, redact_token
+from .notifier import preview_eligible, send_lead_cards, TelegramNotifier
 
 
 # ---------------------------------------------------------------------------
@@ -36,13 +36,59 @@ def sanitize_error(exc: BaseException | str) -> tuple[str, str]:
     error_code is a coarse, stable identifier (e.g. "apify_error", "telegram_failure",
     "cost_limit", "lock_conflict"). sanitized_error is a short human string with tokens,
     absolute paths, and Windows usernames stripped.
+
+    Redaction is idempotent: re-sanitizing already-sanitized text leaves it intact.
     """
-    text = redact_token(str(exc))
-    # strip absolute paths (Windows and POSIX)
-    text = redact_token(text)
+    import re as _re
+
+    text = str(exc)
+
+    # --- Secret / token redaction (idempotent: skips already-[redacted] values) ---
+    # Assignment / colon forms: token=..., api_token: ..., "chat_id": ..., etc.
+    text = _re.sub(
+        r"(?i)\b(token|api_token|bot_token|api_key|secret|password|chat_id)\b"
+        r"\s*(?:=|:)\s*([^\s\[\]]+)",
+        lambda m: f"{m.group(1)}=[redacted]",
+        text,
+    )
+    # Telegram bot token form: bot12345:[redacted]
+    text = _re.sub(
+        r"bot\d+:[A-Za-z0-9_.-]+",
+        "[redacted]",
+        text,
+    )
+    # JSON-quoted forms: "token": "VALUE" (value may contain punctuation).
+
+    text = _re.sub(
+        r'(?i)("(?:token|api_token|bot_token|api_key|secret|password|chat_id)"\s*:\s*)'
+        r'("[^"]*")',
+        lambda m: f'{m.group(1)}"[redacted]"',
+        text,
+    )
+    # HTTP Authorization header: "Authorization: Bearer [redacted]".
+    text = _re.sub(
+        r"(?i)\bauthorization\s*(?::|=)\s*bearer\s+([^\s\[\]]+)",
+        "Authorization: Bearer [redacted]",
+        text,
+    )
+    # Bare "Bearer <token>" occurrences.
+    text = _re.sub(
+        r"(?i)\bbearer\s+([A-Za-z0-9._-]{8,})",
+        "Bearer [redacted]",
+        text,
+    )
+    # URL query-string tokens: ?token=VALUE or &token=VALUE.
+    text = _re.sub(
+        r"(?i)([?&]token=)([^\s&\[\]]+)",
+        lambda m: f"{m.group(1)}[redacted]",
+        text,
+    )
+
+    # --- Path redaction (Windows drive paths and POSIX absolute paths) ---
     text = _strip_paths(text)
     text = _strip_usernames(text)
-    lowered = str(exc).lower()
+
+    lowered = text.lower()
     if "cost" in lowered and ("limit" in lowered or "stop" in lowered or "exceed" in lowered):
         code = "cost_limit"
     elif "lock" in lowered or "already running" in lowered:
@@ -66,7 +112,12 @@ def sanitize_error(exc: BaseException | str) -> tuple[str, str]:
 def _strip_paths(text: str) -> str:
     out = []
     for part in text.split():
-        if len(part) > 3 and (part[1:3] == ":\\" or part.startswith("/") or "\\" in part and part[1:2] == ":"):
+        # Windows drive path (C:\...) or POSIX absolute path (/usr/...).
+        if len(part) > 2 and (
+            (len(part) > 3 and part[1:3] == ":\\")
+            or part.startswith("/")
+            or (len(part) > 2 and part[1:2] == ":" and "\\" in part)
+        ):
             out.append("[path]")
         else:
             out.append(part)

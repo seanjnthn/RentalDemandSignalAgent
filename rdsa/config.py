@@ -65,6 +65,11 @@ BUDGET_PLAUSIBLE_MAX = int(os.getenv("RDSA_BUDGET_PLAUSIBLE_MAX", "500000000"))
 # remain unchanged; live execution is enabled in-process only after preflight.
 SCHEDULER_ENABLED = os.getenv("RDSA_SCHEDULER_ENABLED", "false").strip().lower() == "true"
 SCHEDULER_SEND_ENABLED = os.getenv("RDSA_SCHEDULER_SEND_ENABLED", "false").strip().lower() == "true"
+# Application-level UI feature flag. This does not enable Apify, Telegram,
+# Scheduler, or scheduled sending by itself.
+DASHBOARD_OPERATOR_CONTROLS_ENABLED = os.getenv(
+    "RDSA_DASHBOARD_OPERATOR_CONTROLS_ENABLED", "false"
+).strip().lower() == "true"
 # Conservative overall timeout for a scheduled run (seconds). No automatic retry on timeout.
 SCHEDULER_TIMEOUT_SECONDS = int(os.getenv("RDSA_SCHEDULER_TIMEOUT_SECONDS", "900"))
 # Git-ignored runtime directory for the cross-process lock file.

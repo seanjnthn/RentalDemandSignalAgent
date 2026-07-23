@@ -335,7 +335,7 @@ def test_ledger_failed_and_sanitized_error(sched_env, monkeypatch):
     row = S.latest_run(c)
     assert row["status"] == "failed"
     assert token not in (row["sanitized_error"] or "")
-    assert "[REDACTED_TOKEN]" in (row["sanitized_error"] or "")
+    assert "[redacted]" in (row["sanitized_error"] or "")
 
 
 def test_no_secrets_stored_in_ledger(sched_env, monkeypatch):
