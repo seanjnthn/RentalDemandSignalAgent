@@ -94,8 +94,8 @@ class FakeManualPort:
         self.last_args = args[0] if args else kwargs
         if self.side_effect is not None:
             return self.side_effect(*args, **kwargs)
-        # Mirror the real orchestrator's success-path shape.
-        return {"status": "completed", "run_id": "man-" + str(self.calls)}
+        # Mirror the real async adapter: accepted + operation_id, no run_id.
+        return {"status": "accepted", "run_id": None}
 
 
 class FakeAudit:

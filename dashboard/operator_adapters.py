@@ -148,8 +148,13 @@ class RealManualScanAdapter:
         existing = _audit_lookup(op_id)
         if existing:
             outcome = str(existing.get("outcome") or LIFECYCLE_ACCEPTED)
+            # If a real scheduler run_id is present, the operation has progressed
+            # beyond the initial accepted phase. Report the actual outcome,
+            # not "accepted" — even if the service overwrote the outcome.
+            if existing.get("run_id") and outcome == LIFECYCLE_ACCEPTED:
+                outcome = LIFECYCLE_COMPLETED
             # accepted/running → adapter reports this as in-progress.
-            # Any terminal outcome or an operation with a real run_id → report actual state.
+            # Any terminal outcome → report actual state.
             if outcome in {LIFECYCLE_ACCEPTED, LIFECYCLE_RUNNING}:
                 return {"status": LIFECYCLE_ACCEPTED, "operation_id": op_id,
                         "run_id": existing.get("run_id"),

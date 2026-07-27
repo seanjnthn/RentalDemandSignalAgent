@@ -325,13 +325,21 @@ def start_manual_scan(
     run_id = report.get("run_id")
     # NEVER substitute operation_id as fallback run_id.
     # run_id must remain None until a real scheduler run is created.
-    if status in ("refused", "blocked_cost_limit", "blocked_lock", "failed"):
+    _terminal_or_blocked = {
+        "refused", "blocked_cost_limit", "blocked_lock", "failed",
+        "completed", "completed_no_new_leads", "completed_no_eligible_leads",
+        "running", "interrupted",
+    }
+    if status in _terminal_or_blocked:
+        # Operation already exists and is terminal, blocked, or in progress.
+        # Do NOT accept a new launch.
         _audit(ports, op_id, "manual_scan_start", {},
                 {"accepted": False, "run_id": run_id, "status": status},
-                "refused", status,
+                "refused" if status in ("refused", "blocked_cost_limit", "blocked_lock", "failed") else status,
                 run_id=run_id)
         return ScanResult(accepted=False, status=status, operation_id=op_id, run_id=run_id,
-                          message=str(report.get("message", status)))
+                          message=str(report.get("message", f"Operation already recorded (status={status})")))
+    # Only "accepted" without a run_id is a genuine fresh launch.
     # Accepted: lock the opt-in for the remainder of this process.
     _set_opt_in(True)
     _audit(ports, op_id, "manual_scan_start", {},
@@ -432,7 +440,12 @@ def append_operator_audit(row: dict) -> None:
                 actor=excluded.actor,
                 previous_state=COALESCE(excluded.previous_state, operator_audit.previous_state),
                 resulting_state=COALESCE(excluded.resulting_state, operator_audit.resulting_state),
-                outcome=excluded.outcome,
+                outcome=CASE WHEN excluded.outcome IN ('completed','failed','interrupted','refused','blocked_cost_limit','blocked_lock')
+                    THEN excluded.outcome
+                    WHEN operator_audit.outcome IN ('completed','failed','interrupted')
+                    THEN operator_audit.outcome
+                    ELSE excluded.outcome
+                END,
                 error_code=COALESCE(excluded.error_code, operator_audit.error_code),
                 sanitized_error=COALESCE(excluded.sanitized_error, operator_audit.sanitized_error),
                 run_id=COALESCE(excluded.run_id, operator_audit.run_id)
