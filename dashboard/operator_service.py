@@ -323,12 +323,13 @@ def start_manual_scan(
 
     status = str(report.get("status"))
     run_id = report.get("run_id")
-    if not run_id:
-        run_id = report.get("operation_id")
+    # NEVER substitute operation_id as fallback run_id.
+    # run_id must remain None until a real scheduler run is created.
     if status in ("refused", "blocked_cost_limit", "blocked_lock", "failed"):
         _audit(ports, op_id, "manual_scan_start", {},
                 {"accepted": False, "run_id": run_id, "status": status},
-                "refused", status)
+                "refused", status,
+                run_id=run_id)
         return ScanResult(accepted=False, status=status, operation_id=op_id, run_id=run_id,
                           message=str(report.get("message", status)))
     # Accepted: lock the opt-in for the remainder of this process.
@@ -338,7 +339,7 @@ def start_manual_scan(
             "accepted", run_id=run_id)
     return ScanResult(
         accepted=True, status=status, operation_id=op_id, run_id=run_id,
-        message=f"Manual search accepted. run_id={run_id}",
+        message=f"Manual search accepted. operation_id={op_id}" + (f" run_id={run_id}" if run_id else ""),
     )
 
 
@@ -390,7 +391,14 @@ def _audit_db_path() -> Path:
 
 
 def append_operator_audit(row: dict) -> None:
-    """Persist one sanitized operator-action row. No secrets are stored."""
+    """Persist one sanitized operator-action row. No secrets are stored.
+
+    Uses ON CONFLICT ... DO UPDATE with COALESCE so that a later write
+    that omits (sets to NULL) a column preserves the prior value.
+    Explicit non-NULL values always overwrite. This prevents service-level
+    audit writes from destroying adapter state, run_id, status progression,
+    timestamps, or sanitized failure context.
+    """
     import sqlite3
 
     path = _audit_db_path()
@@ -414,10 +422,20 @@ def append_operator_audit(row: dict) -> None:
         )
         conn.execute(
             """
-            INSERT OR REPLACE INTO operator_audit(
+            INSERT INTO operator_audit(
                 op_id, action, timestamp, actor, previous_state,
                 resulting_state, outcome, error_code, sanitized_error, run_id
             ) VALUES(?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(op_id) DO UPDATE SET
+                action=excluded.action,
+                timestamp=excluded.timestamp,
+                actor=excluded.actor,
+                previous_state=COALESCE(excluded.previous_state, operator_audit.previous_state),
+                resulting_state=COALESCE(excluded.resulting_state, operator_audit.resulting_state),
+                outcome=excluded.outcome,
+                error_code=COALESCE(excluded.error_code, operator_audit.error_code),
+                sanitized_error=COALESCE(excluded.sanitized_error, operator_audit.sanitized_error),
+                run_id=COALESCE(excluded.run_id, operator_audit.run_id)
             """,
             (
                 row.get("op_id"),

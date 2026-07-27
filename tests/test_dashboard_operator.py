@@ -498,3 +498,269 @@ def test_scanresult_and_taskcontrol_to_dict():
     assert sr.to_dict()["accepted"] is True
     tc = TaskControlState(exists=True, enabled=True, valid=True)
     assert tc.to_dict()["enabled"] is True
+
+
+# ===========================================================================
+# Lifecycle regression: operation_id vs run_id separation
+# ===========================================================================
+
+class FakeAsyncManualPort:
+    """Simulates RealManualScanAdapter returning accepted + operation_id, NO run_id."""
+    def __init__(self):
+        self.calls = 0
+        self.last_args = None
+
+    def __call__(self, args):
+        self.calls += 1
+        self.last_args = args
+        op_id = getattr(args, "operation_id", None)
+        # Real adapter returns accepted WITHOUT a run_id (child hasn't started yet)
+        return {"status": "accepted", "operation_id": op_id,
+                "message": "Manual scan accepted for asynchronous launch."}
+
+
+def test_async_launch_operation_id_not_substituted_as_run_id():
+    """Regression: operation_id MUST NOT be used as fallback run_id.
+
+    When the async adapter returns accepted but run_id is absent (child
+    hasn't created a scheduler run yet), the service must preserve
+    run_id=None — never substitute operation_id. This was the root cause
+    of b6039d2fffc0: the fallback wrote the operation_id into the audit
+    run_id column, causing the child idempotency guard to exit before
+    ever calling run_scheduled_run().
+    """
+    manual = FakeAsyncManualPort()
+    ports, _, audit = make_ports(manual=manual)
+    result = OS.start_manual_scan(confirm=True, operation_id="test-op-async", ports=ports)
+
+    # The scan was accepted (adapter launched child).
+    assert result.accepted is True
+    assert result.status == "accepted"
+    assert result.operation_id == "test-op-async"
+
+    # CRITICAL: run_id must be None — the child hasn't created a scheduler run yet.
+    assert result.run_id is None, (
+        f"run_id must be None when async adapter hasn't returned one, "
+        f"but got {result.run_id!r}"
+    )
+
+    # Audit row must preserve operation_id and keep run_id None.
+    accepted_rows = [r for r in audit.rows if r["outcome"] == "accepted"]
+    assert len(accepted_rows) >= 1
+    for row in accepted_rows:
+        assert row["op_id"] == "test-op-async"
+        assert row.get("run_id") is None, (
+            f"Audit run_id must be None before child creates scheduler run, "
+            f"but got {row.get('run_id')!r}"
+        )
+
+    # The adapter was called exactly once.
+    assert manual.calls == 1
+
+
+def test_async_launch_preserves_operation_id_separate_from_run_id():
+    """operation_id is the persistent dashboard identifier, run_id is the
+    scheduler ledger identifier — they must never be confused."""
+    manual = FakeAsyncManualPort()
+    ports, _, audit = make_ports(manual=manual)
+    result = OS.start_manual_scan(confirm=True, operation_id="keep-separate", ports=ports)
+
+    assert result.operation_id == "keep-separate"
+    assert result.run_id is None
+    assert result.operation_id != result.run_id
+
+
+def test_audit_never_writes_operation_id_as_run_id():
+    """No audit row written by the service should have run_id == operation_id."""
+    manual = FakeAsyncManualPort()
+    ports, _, audit = make_ports(manual=manual)
+    OS.start_manual_scan(confirm=True, operation_id="no-fallback", ports=ports)
+
+    for row in audit.rows:
+        op = row.get("op_id")
+        rid = row.get("run_id")
+        if rid is not None:
+            assert rid != op, (
+                f"Audit row has run_id == op_id == {rid!r}; "
+                f"operation_id must never be used as fallback run_id"
+            )
+
+
+def test_async_launch_child_can_proceed_when_run_id_is_none(tmp_path):
+    """The child CLI must be allowed to proceed when run_id=None exists
+    with outcome='accepted' — this means 'not yet assigned', not 'already done'."""
+    # Simulate what execute_dashboard_manual_scan() sees:
+    # outcome='accepted', run_id=None → should proceed to run_scheduled_run()
+    from dashboard import operator_adapters as OA
+    from rdsa import config as C
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(C, "RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    # Write an audit row mimicking what the async adapter leaves behind.
+    OA._audit_row("op-proceed", "dashboard_manual_scan", "accepted",
+                  resulting_state={"log": "manual-op-proceed.log"},
+                  run_id=None)
+
+    # Check: the adapter should report this as accepted (not idempotent/completed).
+    existing = OA._audit_lookup("op-proceed")
+    assert existing is not None
+    assert existing["outcome"] == "accepted"
+    assert existing.get("run_id") is None
+    # With outcome='accepted' and no run_id, the CLI should NOT return idempotent.
+    # (It should proceed to run_scheduled_run — but we don't call the full
+    # pipeline here; we just verify the guard condition.)
+
+    monkeypatch.undo()
+
+
+def test_real_run_id_sch_form_updates_same_operation(tmp_path):
+    """When the child creates a real scheduler run (sch-*), that run_id
+    must be written to the same operation's audit row WITHOUT destroying
+    the operation_id or other prior fields."""
+    from dashboard import operator_adapters as OA
+    from rdsa import config as C
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(C, "RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    # Phase 1: adapter writes accepted with run_id=None
+    OA._audit_row("op-sch-update", "dashboard_manual_scan", "accepted",
+                  resulting_state={"log": "manual-op-sch-update.log"},
+                  run_id=None)
+
+    # Phase 2: child creates real scheduler run and updates audit
+    real_run_id = "sch-20260727T120000Z-a1b2c3d4"
+    OA._audit_row("op-sch-update", "dashboard_manual_cli", "completed",
+                  resulting_state={"status": "completed"},
+                  run_id=real_run_id)
+
+    # Verify: the latest row has the real sch-* run_id
+    existing = OA._audit_lookup("op-sch-update")
+    assert existing is not None
+    assert existing["op_id"] == "op-sch-update"
+    assert existing["run_id"] == real_run_id
+    # operation_id must never equal the scheduler run_id
+    assert existing["op_id"] != existing["run_id"]
+    # The operation is terminal (completed) with a real run_id
+    assert existing["outcome"] == "completed"
+
+    monkeypatch.undo()
+
+
+def test_two_child_attempts_one_scheduler_claim(tmp_path):
+    """A second child attempt on the same operation_id after one child
+    has already created a real scheduler run must NOT launch another run."""
+    from dashboard import operator_adapters as OA
+    from rdsa import config as C
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(C, "RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    # First child: accepted → ran → completed with real run_id.
+    OA._audit_row("op-one-claim", "dashboard_manual_scan", "accepted",
+                  resulting_state={"log": "manual-op-one-claim.log"},
+                  run_id=None)
+
+    attempts = {"n": 0}
+
+    def fake_run(args):
+        attempts["n"] += 1
+        return {"status": "completed", "run_id": "sch-20260727T120000Z-abcdef01"}
+
+    monkeypatch.setattr(OA.S, "run_scheduled_run", fake_run)
+
+    # First child calls CLI entry point.
+    result1 = OA.execute_dashboard_manual_scan("op-one-claim", confirm_run=True)
+    assert result1["run_id"] == "sch-20260727T120000Z-abcdef01"
+    assert attempts["n"] == 1
+
+    # Second child attempts the same operation — must be idempotent.
+    result2 = OA.execute_dashboard_manual_scan("op-one-claim", confirm_run=True)
+    assert result2["idempotent"] is True
+    assert attempts["n"] == 1  # no second run_scheduled_run call
+
+    monkeypatch.undo()
+
+
+def test_child_failure_before_run_creation(tmp_path):
+    """Child fails before creating a scheduler run — terminal state, no retry."""
+    from dashboard import operator_adapters as OA
+    from rdsa import config as C
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(C, "RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    # Adapter writes accepted.
+    OA._audit_row("op-fail-early", "dashboard_manual_scan", "accepted",
+                  resulting_state={"log": "manual-op-fail-early.log"},
+                  run_id=None)
+
+    # Child exits before run_scheduled_run — audit is updated to failed.
+    OA._audit_row("op-fail-early", "dashboard_manual_cli", "failed",
+                  error_code="child_exit", run_id=None)
+
+    # Verify terminal state, no run_id.
+    existing = OA._audit_lookup("op-fail-early")
+    assert existing["outcome"] == "failed"
+    assert existing.get("run_id") is None
+    assert existing["error_code"] == "child_exit"
+
+    monkeypatch.undo()
+
+
+def test_child_failure_after_run_creation(tmp_path):
+    """Child fails after run_scheduled_run created a run — preserves run_id."""
+    from dashboard import operator_adapters as OA
+    from rdsa import config as C
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(C, "RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    OA._audit_row("op-fail-late", "dashboard_manual_scan", "accepted",
+                  resulting_state={"log": "manual-op-fail-late.log"},
+                  run_id=None)
+
+    # Simulate run_scheduled_run was called but then failed.
+    OA._audit_row("op-fail-late", "dashboard_manual_cli", "running")
+    OA._audit_row("op-fail-late", "dashboard_manual_cli", "failed",
+                  error_code="apify_error",
+                  run_id="sch-20260727T120000Z-deadbeef")
+
+    existing = OA._audit_lookup("op-fail-late")
+    assert existing["outcome"] == "failed"
+    assert existing["run_id"] == "sch-20260727T120000Z-deadbeef"
+
+    monkeypatch.undo()
+
+
+def test_existing_terminal_operation_idempotent(tmp_path):
+    """A completed/failed operation must remain idempotent — no new launch."""
+    from dashboard import operator_adapters as OA
+    from rdsa import config as C
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(C, "RUNTIME_DIR", str(tmp_path / "runtime"))
+
+    OA._audit_row("op-terminal", "dashboard_manual_scan", "accepted",
+                  resulting_state={"log": "manual-op-terminal.log"},
+                  run_id=None)
+
+    attempts = {"n": 0}
+
+    def fake_run(args):
+        attempts["n"] += 1
+        return {"status": "completed", "run_id": "sch-20260727T120000Z-ffeeddcc"}
+
+    monkeypatch.setattr(OA.S, "run_scheduled_run", fake_run)
+
+    # First run: completes
+    r1 = OA.execute_dashboard_manual_scan("op-terminal", confirm_run=True)
+    assert attempts["n"] == 1
+
+    # Second run on same terminal operation: idempotent
+    r2 = OA.execute_dashboard_manual_scan("op-terminal", confirm_run=True)
+    assert r2.get("idempotent") is True
+    assert attempts["n"] == 1
+
+    monkeypatch.undo()

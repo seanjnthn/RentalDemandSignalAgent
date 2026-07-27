@@ -147,10 +147,16 @@ class RealManualScanAdapter:
             return {"status": "refused", "message": "trigger_type must be dashboard_manual"}
         existing = _audit_lookup(op_id)
         if existing:
-            outcome = str(existing.get("outcome") or "accepted")
-            status = "accepted" if outcome in {"accepted", "running"} else outcome
-            return {"status": status, "operation_id": op_id,
-                    "run_id": existing.get("run_id"), "message": "operation already recorded"}
+            outcome = str(existing.get("outcome") or LIFECYCLE_ACCEPTED)
+            # accepted/running → adapter reports this as in-progress.
+            # Any terminal outcome or an operation with a real run_id → report actual state.
+            if outcome in {LIFECYCLE_ACCEPTED, LIFECYCLE_RUNNING}:
+                return {"status": LIFECYCLE_ACCEPTED, "operation_id": op_id,
+                        "run_id": existing.get("run_id"),
+                        "message": "operation already recorded"}
+            return {"status": outcome, "operation_id": op_id,
+                    "run_id": existing.get("run_id"),
+                    "message": "operation already recorded"} 
         ready = self.readiness()
         if ready.get("reasons"):
             _audit_row(op_id, "dashboard_manual_scan", "refused",
@@ -168,7 +174,7 @@ class RealManualScanAdapter:
         env.pop("PYTHONPATH", None)
         cmd = [str(self.python_path), "-m", "rdsa.cli", "dashboard-manual-scan",
                "--operation-id", op_id, "--confirm-run"]
-        _audit_row(op_id, "dashboard_manual_scan", "accepted",
+        _audit_row(op_id, "dashboard_manual_scan", LIFECYCLE_ACCEPTED,
                    resulting_state={"log": log_path.name})
         try:
             self.popen(cmd, cwd=str(C.ROOT), env=env, stdout=log_file,
@@ -176,27 +182,94 @@ class RealManualScanAdapter:
         except Exception as exc:
             log_file.close()
             code, sanitized = S.sanitize_error(exc)
-            _audit_row(op_id, "dashboard_manual_scan", "failed", error_code=code,
+            _audit_row(op_id, "dashboard_manual_scan", LIFECYCLE_FAILED, error_code=code,
                        sanitized_error=sanitized)
-            return {"status": "failed", "operation_id": op_id, "error_code": code,
+            return {"status": LIFECYCLE_FAILED, "operation_id": op_id, "error_code": code,
                     "message": sanitized}
-        return {"status": "accepted", "operation_id": op_id,
+        return {"status": LIFECYCLE_ACCEPTED, "operation_id": op_id,
                 "message": "Manual scan accepted for asynchronous launch."}
 
 
+# ---------------------------------------------------------------------------
+# Lifecycle state constants for operator audit outcomes.
+# ---------------------------------------------------------------------------
+LIFECYCLE_ACCEPTED = "accepted"        # async adapter launched child, no scheduler run yet
+LIFECYCLE_LAUNCHING = "launching"      # child is starting (transitional; not persisted alone)
+LIFECYCLE_RUNNING = "running"          # child is executing run_scheduled_run
+LIFECYCLE_COMPLETED = "completed"      # scheduler run finished successfully
+LIFECYCLE_FAILED = "failed"            # any failure (before or after run creation)
+LIFECYCLE_INTERRUPTED = "interrupted"  # child died without terminal update
+
+
+def _run_id_exists_in_scheduled_runs(run_id: str) -> bool:
+    """Check whether a run_id corresponds to an actual scheduled_runs row."""
+    if not run_id or not isinstance(run_id, str):
+        return False
+    import sqlite3
+    from rdsa import config as C
+    db_path = C.DB_PATH  # rdsa_scheduler.db
+    if not Path(db_path).exists():
+        return False
+    try:
+        with sqlite3.connect(str(db_path)) as conn:
+            row = conn.execute(
+                "SELECT 1 FROM scheduled_runs WHERE run_id=? LIMIT 1", (run_id,)
+            ).fetchone()
+            return row is not None
+    except Exception:
+        return False
+
+
 def execute_dashboard_manual_scan(operation_id: str, *, confirm_run: bool) -> dict:
-    """CLI child entry point. Revalidates every safety gate independently."""
+    """CLI child entry point. Revalidates every safety gate independently.
+
+    Lifecycle state machine (operator_audit.outcome):
+
+        accepted  (run_id=NULL)   → child proceeds → running → completed/failed
+        running                   → return existing status (guard against double-launch)
+        completed / failed / …    → idempotent return (terminal)
+        accepted  (run_id=sch-*)  → idempotent if run_id exists in scheduler ledger
+
+    Guard invariants:
+      - accepted + run_id=None → "not yet assigned" → child MUST proceed
+      - accepted + run_id=sch-* → validate against ledger; idempotent if real
+      - run_id populated but NOT in scheduled_runs → orphaned → proceed
+      - any terminal outcome → NEVER auto-retry
+    """
     if not confirm_run:
         _audit_row(operation_id, "dashboard_manual_cli", "refused", error_code="missing_confirmation")
         return {"status": "refused", "operation_id": operation_id, "message": "--confirm-run required"}
+
     existing = _audit_lookup(operation_id)
-    if existing and existing.get("outcome") == "running":
-        return {"status": "running", "operation_id": operation_id, "run_id": existing.get("run_id")}
-    if existing and existing.get("run_id"):
-        return {"status": existing.get("outcome") or "completed", "operation_id": operation_id,
+
+    # ---- guard: already running ----
+    if existing and existing.get("outcome") == LIFECYCLE_RUNNING:
+        return {"status": "running", "operation_id": operation_id,
+                "run_id": existing.get("run_id")}
+
+    # ---- guard: terminal outcome (completed / failed / refused / interrupted / blocked_*) ----
+    _terminal_outcomes = {
+        LIFECYCLE_COMPLETED, LIFECYCLE_FAILED, "refused",
+        LIFECYCLE_INTERRUPTED, "blocked_cost_limit", "blocked_lock",
+    }
+    if existing and existing.get("outcome") in _terminal_outcomes:
+        return {"status": existing.get("outcome"), "operation_id": operation_id,
                 "run_id": existing.get("run_id"), "idempotent": True}
-    if existing and existing.get("outcome") not in {"accepted", None}:
-        return {"status": existing.get("outcome"), "operation_id": operation_id, "idempotent": True}
+
+    # ---- guard: accepted with a real scheduler run_id ----
+    if existing and existing.get("run_id"):
+        existing_run_id = existing.get("run_id")
+        # Validate: a populated run_id must correspond to an actual scheduled_runs row.
+        if _run_id_exists_in_scheduled_runs(existing_run_id):
+            return {"status": existing.get("outcome") or LIFECYCLE_COMPLETED,
+                    "operation_id": operation_id, "run_id": existing_run_id,
+                    "idempotent": True}
+        # run_id is populated but orphaned (no matching ledger row).
+        # Treat as if run_id were absent — child should proceed.
+
+    # ---- accepted with run_id=None (or no existing row) → proceed ----
+    # This is the normal path: operation was accepted by the async adapter,
+    # child has not yet created a scheduler run. The child MUST proceed.
 
     # Force scan-only in this process and leave parent/global environment untouched.
     old_env = {k: os.environ.get(k) for k in (
@@ -211,19 +284,19 @@ def execute_dashboard_manual_scan(operation_id: str, *, confirm_run: bool) -> di
         os.environ["RDSA_SCHEDULER_SEND_ENABLED"] = "false"
         os.environ["RDSA_TELEGRAM_SEND_ENABLED"] = "false"
         args = type("A", (), {"confirm_scheduled_run": True, "trigger_type": "dashboard_manual"})()
-        _audit_row(operation_id, "dashboard_manual_cli", "running")
+        _audit_row(operation_id, "dashboard_manual_cli", LIFECYCLE_RUNNING)
         report = S.run_scheduled_run(args)
         run_id = report.get("run_id")
-        outcome = "completed" if str(report.get("status", "")).startswith("completed") else str(report.get("status"))
+        outcome = LIFECYCLE_COMPLETED if str(report.get("status", "")).startswith("completed") else str(report.get("status"))
         _audit_row(operation_id, "dashboard_manual_cli", outcome,
                    resulting_state={"status": report.get("status")}, run_id=run_id)
         report["operation_id"] = operation_id
         return report
     except Exception as exc:
         code, sanitized = S.sanitize_error(exc)
-        _audit_row(operation_id, "dashboard_manual_cli", "failed", error_code=code,
+        _audit_row(operation_id, "dashboard_manual_cli", LIFECYCLE_FAILED, error_code=code,
                    sanitized_error=sanitized)
-        return {"status": "failed", "operation_id": operation_id, "error_code": code}
+        return {"status": LIFECYCLE_FAILED, "operation_id": operation_id, "error_code": code}
     finally:
         C.APIFY_LIVE_ENABLED, C.TELEGRAM_SEND_ENABLED, C.SCHEDULER_SEND_ENABLED, C.SCHEDULER_ENABLED = old_cfg
         for k, v in old_env.items():
