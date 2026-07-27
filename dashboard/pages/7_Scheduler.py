@@ -165,6 +165,7 @@ st.caption("This page is read-only. To activate a real schedule, an operator mus
 def _render_scan_result(result: "OS.ScanResult") -> None:
     d = result.to_dict()
     if d.get("accepted"):
+        st.session_state["_last_operation_id"] = d.get("operation_id")
         st.session_state["_last_scan_run_id"] = d.get("run_id")
         st.session_state["_manual_operation_accepted"] = True
         st.success(d.get("message") or "Manual search accepted.")
@@ -231,10 +232,21 @@ with st.container(border=True):
             )
             _render_scan_result(result)
 
-    # Read-only poll of the last accepted run, when one exists.
-    if st.session_state.get("_last_scan_run_id"):
-        st.caption(f"Last accepted run: {st.session_state['_last_scan_run_id']} "
-                   "— poll its status on the Scheduler read-only area above.")
+    # Read-only poll of the last accepted operation, when one exists.
+    last_op_id = st.session_state.get("_last_operation_id")
+    last_run_id = st.session_state.get("_last_scan_run_id")
+    if last_op_id or last_run_id:
+        if last_run_id:
+            st.caption(
+                f"Last accepted: operation_id={last_op_id} · run_id={last_run_id} "
+                "— poll its status on the Scheduler read-only area above."
+            )
+        else:
+            st.caption(
+                f"Manual search accepted — operation_id={last_op_id} "
+                "— Waiting for scheduler run ID. "
+                "Poll the Scheduler read-only area above for status."
+            )
 
 
 with st.container(border=True):
