@@ -65,6 +65,10 @@ class OperatorPorts:
     audit_port: Callable[[dict], None] = field(
         default_factory=lambda: append_operator_audit
     )
+    # audit_lookup(op_id: str) -> dict | None
+    audit_lookup_port: Callable[[str], dict | None] = field(
+        default_factory=lambda: _lookup_operator_audit
+    )
     # trigger_type passed to the manual run.
     trigger_type: str = "dashboard_manual"
 
@@ -170,6 +174,15 @@ def not_connected_ports() -> "OperatorPorts":
 # Process-local opt-in (never persisted)
 # ---------------------------------------------------------------------------
 _live_opt_in = False
+
+# Audit outcomes that are considered terminal — once recorded, a re-submission
+# of the same operation_id must return the existing outcome without invoking
+# the adapter again.
+_TERMINAL_AUDIT_OUTCOMES = frozenset({
+    "refused", "blocked_cost_limit", "blocked_lock", "failed",
+    "completed", "completed_no_new_leads", "completed_no_eligible_leads",
+    "running", "interrupted",
+})
 
 
 def reset_opt_in() -> None:
@@ -294,6 +307,19 @@ def start_manual_scan(
         return ScanResult(accepted=False, status="refused", operation_id=op_id,
                           message="A manual launch was already accepted this session.")
 
+    # Persistent idempotency: check operator_audit table before invoking adapter.
+    # A completed / failed / blocked operation must never be re-invoked even
+    # across process restarts (the audit table survives Streamlit reruns).
+    existing = ports.audit_lookup_port(op_id)
+    if existing:
+        outcome = existing.get("outcome", "")
+        if outcome in _TERMINAL_AUDIT_OUTCOMES:
+            return ScanResult(
+                accepted=False, status=outcome, operation_id=op_id,
+                run_id=existing.get("run_id"),
+                message=f"Operation already recorded (outcome={outcome}).",
+            )
+
     # Re-check readiness at execution time (fail-closed).
     readiness = get_manual_run_readiness(ports)
     if not readiness.ready:
@@ -396,6 +422,25 @@ def get_task_control_state(ports: OperatorPorts | None = None) -> TaskControlSta
 # ---------------------------------------------------------------------------
 def _audit_db_path() -> Path:
     return Path(C.RUNTIME_DIR) / "operator_audit.sqlite3"
+
+
+def _lookup_operator_audit(op_id: str) -> dict | None:
+    """Look up an existing operator audit entry by operation_id.
+
+    Returns the row as a dict (keys include ``op_id``, ``outcome``, ``run_id``,
+    ``status``, ``error_code``, ``sanitized_error``, ``timestamp``) or None if
+    no entry exists for this operation.
+    """
+    import sqlite3
+    path = _audit_db_path()
+    if not path.exists():
+        return None
+    with sqlite3.connect(str(path)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM operator_audit WHERE op_id=?", (op_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def append_operator_audit(row: dict) -> None:
