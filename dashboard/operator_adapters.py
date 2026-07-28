@@ -212,7 +212,7 @@ def _run_id_exists_in_scheduled_runs(run_id: str) -> bool:
         return False
     import sqlite3
     from rdsa import config as C
-    db_path = C.DB_PATH  # rdsa_scheduler.db
+    db_path = C.DB_PATH  # rdsa.sqlite3
     if not Path(db_path).exists():
         return False
     try:

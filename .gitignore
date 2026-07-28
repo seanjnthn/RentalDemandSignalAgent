@@ -35,6 +35,9 @@ data/apify_usage.json
 # Scheduler runtime dir (process lock file). Never commit runtime state.
 runtime/
 
+# Obsolete scheduler database artifact — must never be tracked.
+data/rdsa_scheduler.db
+
 .pytest-temp*/
 
 .codex_v062.md
