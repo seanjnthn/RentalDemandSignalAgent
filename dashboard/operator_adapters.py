@@ -277,17 +277,28 @@ def execute_dashboard_manual_scan(operation_id: str, *, confirm_run: bool) -> di
     # child has not yet created a scheduler run. The child MUST proceed.
 
     # Force scan-only in this process and leave parent/global environment untouched.
+    # v0.9: When MANUAL_SEND_ENABLED=true AND credentials are valid,
+    # process-locally enable Telegram delivery. Otherwise, hard-force off.
     old_env = {k: os.environ.get(k) for k in (
         "APIFY_LIVE_ENABLED", "RDSA_TELEGRAM_SEND_ENABLED", "RDSA_SCHEDULER_SEND_ENABLED",
         "RDSA_SCHEDULER_ENABLED")}
     old_cfg = (C.APIFY_LIVE_ENABLED, C.TELEGRAM_SEND_ENABLED, C.SCHEDULER_SEND_ENABLED,
                C.SCHEDULER_ENABLED)
     try:
+        from rdsa.notifier import telegram_credentials_valid
         C.SCHEDULER_ENABLED = True
-        C.SCHEDULER_SEND_ENABLED = False
         os.environ["RDSA_SCHEDULER_ENABLED"] = "true"
-        os.environ["RDSA_SCHEDULER_SEND_ENABLED"] = "false"
-        os.environ["RDSA_TELEGRAM_SEND_ENABLED"] = "false"
+
+        if C.MANUAL_SEND_ENABLED and telegram_credentials_valid():
+            C.SCHEDULER_SEND_ENABLED = True
+            C.TELEGRAM_SEND_ENABLED = True
+            os.environ["RDSA_SCHEDULER_SEND_ENABLED"] = "true"
+            os.environ["RDSA_TELEGRAM_SEND_ENABLED"] = "true"
+        else:
+            C.SCHEDULER_SEND_ENABLED = False
+            C.TELEGRAM_SEND_ENABLED = False
+            os.environ["RDSA_SCHEDULER_SEND_ENABLED"] = "false"
+            os.environ["RDSA_TELEGRAM_SEND_ENABLED"] = "false"
         args = type("A", (), {"confirm_scheduled_run": True, "trigger_type": "dashboard_manual"})()
         _audit_row(operation_id, "dashboard_manual_cli", LIFECYCLE_RUNNING)
         report = S.run_scheduled_run(args)

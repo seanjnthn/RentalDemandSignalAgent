@@ -502,6 +502,7 @@ def run_scheduled_run(args) -> dict:
     """
     run_id = f"sch-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
     trigger_type = getattr(args, "trigger_type", "daily_schedule") or "daily_schedule"
+    is_manual = trigger_type == "dashboard_manual"
     scheduler_send = config.SCHEDULER_SEND_ENABLED
 
     # ---- gate 1: kill switches + explicit confirmation ----
@@ -515,6 +516,8 @@ def run_scheduled_run(args) -> dict:
     from .apify_provider import ApifyThreadsProvider
     from .inventory import validate_real_inventory_for_scan
     from .db import migrate_provenance, associate_run_leads
+    from .db import claim_notification, complete_notification as _complete_notification
+    from .notifier import format_completion_summary, telegram_credentials_valid, redact_token, _get
 
     c = D.connect(config.DB_PATH)
     migrate_ledger(c)
@@ -526,8 +529,10 @@ def run_scheduled_run(args) -> dict:
         nonlocal live_restored
         config.APIFY_LIVE_ENABLED = "false"
         config.TELEGRAM_SEND_ENABLED = False
+        config.SCHEDULER_SEND_ENABLED = False
         os.environ.pop("APIFY_LIVE_ENABLED", None)
         os.environ.pop("RDSA_TELEGRAM_SEND_ENABLED", None)
+        os.environ.pop("RDSA_SCHEDULER_SEND_ENABLED", None)
         live_restored = True
 
     # ---- gate 0: fail-closed interruption recovery ----
@@ -619,25 +624,98 @@ def run_scheduled_run(args) -> dict:
         ]
         associate_run_leads(c, run_id, associations)
 
-        claimed = 0
-        sent = 0
-        if scheduler_send and eligible:
-            update_run_progress(c, run_id, "delivery")
-            notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_ALLOWED_CHAT_ID)
-            sent = send_lead_cards(
-                notifier, eligible, c, matching_enabled=True,
-                posts_scanned=result["raw_posts"], new_leads=result["new_rows"],
-                new_post_ids=new_post_ids, allow_summary=False,
-            )
-            claimed = sent
-
-        update_run_progress(c, run_id, "cleanup")
-        # ---- ledger completion ----
-        usage_after = _read_usage()
+        # Determine terminal status BEFORE delivery (needed by completion summary).
         if not eligible:
             status = "completed_no_eligible_leads" if result["new_rows"] else "completed_no_new_leads"
         else:
             status = "completed"
+
+        claimed = 0
+        sent = 0
+
+        # Determine whether Telegram delivery should happen for this run.
+        # - Scheduled runs: gated by scheduler_send (RDSA_SCHEDULER_SEND_ENABLED).
+        # - Manual dashboard scans: gated by MANUAL_SEND_ENABLED (process-local,
+        #   never persists globally).
+        should_telegram = (scheduler_send or
+                          (is_manual and config.MANUAL_SEND_ENABLED))
+
+        if should_telegram:
+            update_run_progress(c, run_id, "delivery")
+            notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_ALLOWED_CHAT_ID)
+
+            # 1. Send eligible lead cards first (cards-before-summary order).
+            if eligible:
+                sent = send_lead_cards(
+                    notifier, eligible, c, matching_enabled=True,
+                    posts_scanned=result["raw_posts"], new_leads=result["new_rows"],
+                    new_post_ids=new_post_ids, allow_summary=False,
+                )
+                claimed = sent
+
+            # 2. Send completion summary for manual scans (v0.9).
+            if is_manual:
+                # Compute classification counts for the summary.
+                all_leads = result.get("leads", [])
+                qualified_count = sum(1 for l in all_leads if _get(l, "lead_class") == "qualified_lead")
+                watch_count = sum(1 for l in all_leads if _get(l, "lead_class") == "watch")
+                agent_broker_count = sum(1 for l in all_leads if _get(l, "lead_class") == "agent_broker")
+                inventory_match_count = sum(
+                    1 for l in eligible if _get(l, "matched_inventory", [])
+                )
+                duration_str = ""
+                started_at = None
+                finished_at = datetime.now(timezone.utc).isoformat()
+                try:
+                    ledger = c.execute(
+                        "SELECT started_at FROM scheduled_runs WHERE run_id=?",
+                        (run_id,)
+                    ).fetchone()
+                    if ledger:
+                        started_at = ledger["started_at"]
+                        try:
+                            start_dt = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+                            end_dt = datetime.fromisoformat(str(finished_at).replace("Z", "+00:00"))
+                            secs = int((end_dt - start_dt).total_seconds())
+                            if secs >= 60:
+                                duration_str = f"{secs // 60}m {secs % 60}s"
+                            else:
+                                duration_str = f"{secs}s"
+                        except (ValueError, TypeError):
+                            pass
+                except Exception:
+                    pass
+
+                stats = {
+                    "status": status,
+                    "run_id": run_id,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "duration": duration_str,
+                    "raw_posts": result.get("raw_posts", 0),
+                    "existing_posts": result.get("duplicates", 0),
+                    "new_posts": result.get("new_rows", 0),
+                    "qualified_count": qualified_count,
+                    "watch_count": watch_count,
+                    "agent_broker_count": agent_broker_count,
+                    "eligible_count": len(eligible),
+                    "inventory_match_count": inventory_match_count,
+                    "sent_cards": sent,
+                    "monthly_usage_usd": str(usage.get("actual_usd", "")),
+                }
+                summary_text = format_completion_summary(stats)
+
+                # Idempotent: claim before sending.
+                if claim_notification(c, run_id, "manual_completion"):
+                    try:
+                        msg_id = notifier.send(summary_text)
+                        _complete_notification(c, run_id, msg_id, "manual_completion")
+                    except Exception as exc:
+                        print(f"{redact_token(exc)}")
+
+        update_run_progress(c, run_id, "cleanup")
+        # ---- ledger completion ----
+        usage_after = _read_usage()
         last_run_id = getattr(provider, "last_run_id", None)
         # The real provider does not always expose last_run_id; only persist a
         # genuine value (never a mock/test double) into the ledger.
@@ -667,6 +745,18 @@ def run_scheduled_run(args) -> dict:
         except Exception:
             pass
         print(f"[error] scheduled run failed ({code}): {sanitized}")
+        # v0.9: For manual scans, send a sanitized failure notification
+        # (best-effort; never replaces the actual scheduler failure state).
+        if is_manual and config.MANUAL_SEND_ENABLED:
+            try:
+                if claim_notification(c, run_id, "manual_failure"):
+                    notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN,
+                                                config.TELEGRAM_ALLOWED_CHAT_ID)
+                    msg = f"⚠️ *RDSA manual scan failed*\n\n*Run ID:* `{run_id}`\n*Error:* {sanitized}"
+                    msg_id = notifier.send(msg)
+                    _complete_notification(c, run_id, msg_id, "manual_failure")
+            except Exception:
+                pass
         return {"status": "failed", "run_id": run_id, "error_code": code}
     finally:
         _restore_flags()

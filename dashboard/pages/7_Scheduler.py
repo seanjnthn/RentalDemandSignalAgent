@@ -184,6 +184,35 @@ st.caption("Scan-only. Every action requires an explicit confirmation. "
            "Telegram delivery is Off. Recurring enable/disable controls are deferred.")
 
 
+# ---- Manual Telegram readiness (v0.9) ---------------------------------------
+with st.container(border=True):
+    st.subheader("Manual Telegram notifications")
+
+    # Determine readiness based on MANUAL_SEND_ENABLED + credentials
+    from rdsa.notifier import telegram_credentials_valid
+    manual_enabled = getattr(C, "MANUAL_SEND_ENABLED", False)
+    creds_ok = telegram_credentials_valid()
+
+    if manual_enabled and creds_ok:
+        st.success("Ready")
+        st.caption(
+            "When enabled, every completed manual scan sends a Telegram summary "
+            "and up to 3 eligible new lead cards."
+        )
+    elif manual_enabled and not creds_ok:
+        st.warning("Credentials missing")
+        st.caption(
+            "Set Telegram credentials (bot token and chat ID) in .env to enable "
+            "Telegram delivery for manual scans."
+        )
+    else:
+        st.info("Disabled")
+        st.caption(
+            "Set RDSA_MANUAL_SEND_ENABLED=true in .env to enable Telegram "
+            "delivery for completed manual scans."
+        )
+
+
 # ---- Manual lead search ------------------------------------------------------
 with st.container(border=True):
     st.subheader("Run lead search")
