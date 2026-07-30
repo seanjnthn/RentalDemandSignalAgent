@@ -91,6 +91,16 @@ SCHEDULER_MAX_CHARGE_USD = float(os.getenv("RDSA_SCHEDULER_MAX_TOTAL_CHARGE_USD"
 SCHEDULER_INTERRUPTION_GRACE_SECONDS = int(os.getenv("RDSA_SCHEDULER_INTERRUPTION_GRACE_SECONDS", "3600"))
 
 # ---------------------------------------------------------------------------
+# v0.9 — Manual-scan Telegram notification capability (always-off by default)
+# ---------------------------------------------------------------------------
+# Master safety kill switch. When true AND Telegram credentials are valid, every
+# completed manual dashboard scan sends a completion summary + up to 3 lead cards
+# to Telegram. Permissions are process-local to the manual child — the parent
+# Streamlit process never globally enables scheduler sending.
+# Default: false. Production may set true after validation.
+MANUAL_SEND_ENABLED = os.getenv("RDSA_MANUAL_SEND_ENABLED", "false").strip().lower() == "true"
+
+# ---------------------------------------------------------------------------
 # v0.7.4 — Interrupted run recovery status set
 # ---------------------------------------------------------------------------
 # Terminal-but-unresolved states that must NEVER be auto-retried and are never

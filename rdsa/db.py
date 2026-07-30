@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS scheduled_run_leads(
   eligible INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   PRIMARY KEY (run_id, post_id)
+);
+-- v0.9: Persistent notification idempotency.
+-- One scheduler run → maximum one notification per (run_id, channel, notification_type).
+-- Survives Streamlit reruns, process restarts, duplicate completion callbacks.
+CREATE TABLE IF NOT EXISTS notification_log(
+  run_id TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'telegram',
+  notification_type TEXT NOT NULL,
+  message_id TEXT,
+  sent_at TEXT,
+  PRIMARY KEY (run_id, channel, notification_type)
 );'''
 def connect(path):
     c=sqlite3.connect(path);c.row_factory=sqlite3.Row;c.executescript(SCHEMA)
@@ -173,3 +184,51 @@ def new_post_ids_for_run(c, run_id: str) -> list[str]:
     return [r["post_id"] for r in c.execute(
         "SELECT post_id FROM scheduled_run_leads WHERE run_id=? AND inserted_this_run=1",
         (run_id,)).fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Notification log idempotency (v0.9)
+# ---------------------------------------------------------------------------
+def claim_notification(c, run_id: str, notification_type: str,
+                       channel: str = "telegram") -> bool:
+    """Atomically claim a notification slot. Returns True on success.
+
+    The composite PK (run_id, channel, notification_type) enforces the invariant:
+    one scheduler run → maximum one notification of each type per channel.
+
+    Call BEFORE sending any Telegram message; if this returns False the
+    notification was already sent (idempotent across Streamlit reruns, process
+    restarts, duplicate completion callbacks).
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    cur = c.execute(
+        "INSERT OR IGNORE INTO notification_log"
+        "(run_id, channel, notification_type, sent_at)"
+        " VALUES(?,?,?,?)",
+        (run_id, channel, notification_type, now),
+    )
+    c.commit()
+    return cur.rowcount == 1
+
+
+def complete_notification(c, run_id: str, message_id, notification_type: str,
+                          channel: str = "telegram") -> None:
+    """Record the Telegram message_id after a successful notification send."""
+    c.execute(
+        "UPDATE notification_log SET message_id=? "
+        "WHERE run_id=? AND channel=? AND notification_type=?",
+        (str(message_id), run_id, channel, notification_type),
+    )
+    c.commit()
+
+
+def notification_already_sent(c, run_id: str, notification_type: str,
+                              channel: str = "telegram") -> bool:
+    """Return True if a notification for this (run_id, channel, type) was already sent."""
+    row = c.execute(
+        "SELECT 1 FROM notification_log "
+        "WHERE run_id=? AND channel=? AND notification_type=? AND message_id IS NOT NULL "
+        "LIMIT 1",
+        (run_id, channel, notification_type),
+    ).fetchone()
+    return row is not None

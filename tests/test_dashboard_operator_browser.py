@@ -107,6 +107,7 @@ def _approved_task_model(**overrides):
 def _fake_ports(readiness=None, task_model=None, record=None, fail_manual=False):
     """Build an OperatorPorts that records calls and never touches the host."""
     record = record if record is not None else {"manual": 0, "set": 0}
+    audit_db = {}  # in-memory simulation of operator_audit table
 
     def _task(name):
         return _approved_task_model(**(task_model or {}))
@@ -119,12 +120,21 @@ def _fake_ports(readiness=None, task_model=None, record=None, fail_manual=False)
             )
         return {"status": "completed", "run_id": "man-x-" + str(record["manual"])}
 
+    def _audit_write(row: dict) -> None:
+        op_id = row.get("op_id")
+        if op_id:
+            audit_db[op_id] = row
+
+    def _audit_lookup(op_id: str) -> dict | None:
+        return audit_db.get(op_id)
+
     readiness = readiness or {"ready": True, "reasons": []}
     return OperatorPorts(
         manual_port=_manual,
         task_port=_task,
         readiness_port=lambda: readiness,
-        audit_port=lambda row: None,
+        audit_port=_audit_write,
+        audit_lookup_port=_audit_lookup,
         state_port=lambda: {"lock": {"locked": False}, "interrupted_runs": []},
     )
 
